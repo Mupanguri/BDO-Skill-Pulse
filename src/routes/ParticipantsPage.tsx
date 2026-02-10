@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react'
-import { Users, Award, TrendingUp, TrendingDown, Minus, Download, AlertTriangle, Eye, UserX, User } from 'lucide-react'
+import { Users, Award, TrendingUp, TrendingDown, Minus, Download, AlertTriangle, Eye, UserX, User, Search, X } from 'lucide-react'
 import Button from '../lib/components/Button'
+import Breadcrumb from '../lib/components/Breadcrumb'
+import LoadingSpinner from '../lib/components/LoadingSpinner'
+import EmptyState from '../lib/components/EmptyState'
 import { useAuth } from '../lib/contexts/AuthContext'
 
 interface UserPerformance {
@@ -24,6 +27,7 @@ function ParticipantsPage() {
   const [participants, setParticipants] = useState<UserPerformance[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedUser, setSelectedUser] = useState<UserPerformance | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
   const [filterGrade, setFilterGrade] = useState<string>('all')
   const [filterDepartment, setFilterDepartment] = useState<string>('all')
   const { accessToken } = useAuth()
@@ -141,11 +145,23 @@ function ParticipantsPage() {
     }
   }
 
-  // Apply both filters
+  // Apply filters (search, grade, department)
   let filteredParticipants = participants
+
+  // Search filter
+  if (searchQuery.trim()) {
+    filteredParticipants = filteredParticipants.filter(p =>
+      p.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      p.department.toLowerCase().includes(searchQuery.toLowerCase())
+    )
+  }
+
+  // Grade filter
   if (filterGrade !== 'all') {
     filteredParticipants = filteredParticipants.filter(p => p.grade === filterGrade)
   }
+
+  // Department filter
   if (filterDepartment !== 'all') {
     filteredParticipants = filteredParticipants.filter(p => p.department === filterDepartment)
   }
@@ -236,196 +252,272 @@ function ParticipantsPage() {
   }
 
   if (loading) {
-    return (
-      <div className="text-center py-12">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-500 mx-auto mb-4"></div>
-        <p className="text-gray-600">Loading participants data...</p>
-      </div>
-    )
+    return <LoadingSpinner text="Loading participants data..." />
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold text-bdo-navy">Participants Performance</h1>
-        <Button onClick={exportToExcel} className="bg-green-600 hover:bg-green-700">
-          Export to Excel
+    <div className="ui-page page-enter">
+      {/* Breadcrumb */}
+      <Breadcrumb items={[
+        { label: 'Dashboard', href: '/admin' },
+        { label: 'Participants' }
+      ]} />
+
+      {/* Header */}
+      <div className="ui-page-header mb-6">
+        <div>
+          <h1 className="ui-page-title">Participants Performance</h1>
+          <p className="ui-page-subtitle">{filteredParticipants.length} participants</p>
+        </div>
+        <Button onClick={exportToExcel} variant="secondary" size="sm">
+          <Download className="h-4 w-4 mr-2" aria-hidden="true" />
+          Export CSV
         </Button>
       </div>
 
-      {/* Filters */}
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <div className="flex gap-4 items-center flex-wrap">
-          <div className="flex items-center gap-2">
-            <label className="font-medium text-gray-700">Filter by Grade:</label>
-            <select
-              value={filterGrade}
-              onChange={(e) => setFilterGrade(e.target.value)}
-              className="border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
-            >
-              <option value="all">All Grades</option>
-              <option value="Distinction">Distinction (70-100)</option>
-              <option value="Merit">Merit (60-69)</option>
-              <option value="Pass">Pass (45-59)</option>
-              <option value="Warning">Warning (30-44)</option>
-              <option value="Fail">Fail (0-29)</option>
-            </select>
+      {/* Search and Filters */}
+      <div className="ui-card-strong mb-6">
+        <div className="space-y-4">
+          {/* Search Bar */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" aria-hidden="true" />
+            <input
+              type="text"
+              placeholder="Search by email or department..."
+              className="ui-field w-full pl-10 pr-10"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                aria-label="Clear search"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            )}
           </div>
 
-          <div className="flex items-center gap-2">
-            <label className="font-medium text-gray-700">Filter by Department:</label>
-            <select
-              value={filterDepartment}
-              onChange={(e) => setFilterDepartment(e.target.value)}
-              className="border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
-            >
-              <option value="all">All Departments</option>
-              {departments.map(dept => (
-                <option key={dept} value={dept}>{dept}</option>
-              ))}
-            </select>
+          {/* Filter Dropdowns */}
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex-1">
+              <label htmlFor="filter-grade" className="ui-label">Filter by Grade</label>
+              <select
+                id="filter-grade"
+                value={filterGrade}
+                onChange={(e) => setFilterGrade(e.target.value)}
+                className="ui-field w-full"
+              >
+                <option value="all">All Grades</option>
+                <option value="Distinction">Distinction (70-100)</option>
+                <option value="Merit">Merit (60-69)</option>
+                <option value="Pass">Pass (45-59)</option>
+                <option value="Warning">Warning (30-44)</option>
+                <option value="Fail">Fail (0-29)</option>
+              </select>
+            </div>
+
+            <div className="flex-1">
+              <label htmlFor="filter-department" className="ui-label">Filter by Department</label>
+              <select
+                id="filter-department"
+                value={filterDepartment}
+                onChange={(e) => setFilterDepartment(e.target.value)}
+                className="ui-field w-full"
+              >
+                <option value="all">All Departments</option>
+                {departments.map(dept => (
+                  <option key={dept} value={dept}>{dept}</option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Participants Table */}
-      <div className="bg-white rounded-lg shadow-md overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h2 className="text-xl font-semibold text-bdo-navy">Performance Overview</h2>
-        </div>
+      {filteredParticipants.length === 0 ? (
+        <EmptyState
+          icon={<Users className="h-full w-full" />}
+          title="No participants found"
+          description="No participants match your current search and filter criteria."
+        />
+      ) : (
+        <div className="ui-card-strong">
+          <h2 className="text-xl font-bold text-bdo-navy mb-4">Performance Overview</h2>
 
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Department</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quizzes</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Avg Score</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Grade</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Trend</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {filteredParticipants.map((participant) => (
-                <tr key={participant.email} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900">{participant.email}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-500">{participant.department}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">{participant.quizzesTaken}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">{participant.averageScore}%</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getGradeColor(participant.grade)}`}>
-                      {participant.grade}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">{getTrendIcon(participant.trend)}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <div className="flex gap-2">
-                      <div className="flex flex-col gap-1">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setSelectedUser(participant)}
-                          className="border-red-300 text-red-600 hover:bg-red-100"
-                        >
-                          <Eye className="h-3 w-3 mr-1" />
-                          View
-                        </Button>
-                        <div className="flex gap-1">
-                          {!(participant.email.includes('admin')) && (
-                            <Button
-                              size="sm"
-                              className="bg-purple-600 hover:bg-purple-700 text-white"
-                              onClick={() => handleElevateUser(participant.email)}
-                            >
-                              <User className="h-3 w-3 mr-1" />
-                              Elevate
-                            </Button>
-                          )}
-                          {(participant.grade === 'Warning' || participant.grade === 'Fail') && (
-                            <Button
-                              size="sm"
-                              className="bg-red-600 hover:bg-red-700 text-white"
-                              onClick={() => handleWarnUser(participant.email)}
-                            >
-                              <AlertTriangle className="h-3 w-3" />
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </td>
+          <div className="ui-table-wrap">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th scope="col" className="sticky left-0 z-10 bg-gray-50 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
+                  <th scope="col" className="hidden sm:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Department</th>
+                  <th scope="col" className="hidden md:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quizzes</th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Score</th>
+                  <th scope="col" className="hidden lg:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Grade</th>
+                  <th scope="col" className="hidden lg:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Trend</th>
+                  <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {filteredParticipants.map((participant) => (
+                  <tr key={participant.email} className="hover:bg-gray-50 transition-colors">
+                    <td className="sticky left-0 z-10 bg-white px-6 py-4">
+                      <div className="text-sm font-medium text-bdo-navy truncate max-w-xs">{participant.email}</div>
+                    </td>
+                    <td className="hidden sm:table-cell px-6 py-4">
+                      <div className="text-sm text-gray-600">{participant.department}</div>
+                    </td>
+                    <td className="hidden md:table-cell px-6 py-4">
+                      <div className="text-sm font-medium text-gray-900">{participant.quizzesTaken}</div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="text-sm font-bold text-bdo-navy">{participant.averageScore}%</div>
+                    </td>
+                    <td className="hidden lg:table-cell px-6 py-4">
+                      <span className={`ui-pill ${getGradeColor(participant.grade)}`}>
+                        {participant.grade}
+                      </span>
+                    </td>
+                    <td className="hidden lg:table-cell px-6 py-4">
+                      <div className="text-lg">{getTrendIcon(participant.trend)}</div>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setSelectedUser(participant)}
+                        aria-label={`View details for ${participant.email}`}
+                      >
+                        <Eye className="h-4 w-4 sm:mr-1" aria-hidden="true" />
+                        <span className="hidden sm:inline">View</span>
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* User Details Modal */}
       {selectedUser && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-xl font-bold text-gray-900">{selectedUser.email}</h3>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setSelectedUser(null)}
-                >
-                  Close
-                </Button>
-              </div>
+        <div
+          className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 animate-fade-in"
+          onClick={() => setSelectedUser(null)}
+        >
+          <div
+            className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto animate-zoom-in"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="user-details-title"
+          >
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
+              <h2 id="user-details-title" className="text-xl font-bold text-bdo-navy">
+                User Details
+              </h2>
+              <button
+                onClick={() => setSelectedUser(null)}
+                className="text-gray-400 hover:text-gray-600 transition-colors p-2 hover:bg-gray-100 rounded-lg"
+                aria-label="Close dialog"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
 
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                <div>
-                  <p className="text-sm text-gray-600">Department</p>
-                  <p className="font-medium">{selectedUser.department}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Quizzes Taken</p>
-                  <p className="font-medium">{selectedUser.quizzesTaken}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Average Score</p>
-                  <p className="font-medium">{selectedUser.averageScore}%</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Grade</p>
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getGradeColor(selectedUser.grade)}`}>
-                    {selectedUser.grade}
-                  </span>
-                </div>
-              </div>
-
-              <h4 className="font-semibold mb-3">Quiz History</h4>
-              <div className="space-y-2">
-                {selectedUser.submissions.map((submission, index) => (
-                  <div key={index} className="flex justify-between items-center p-3 bg-gray-50 rounded">
-                    <div>
-                      <p className="font-medium">{submission.sessionName}</p>
-                      <p className="text-sm text-gray-600">
-                        {new Date(submission.completedAt).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-medium">{submission.score}%</p>
-                    </div>
+            <div className="px-6 py-6 space-y-6">
+              {/* User Info */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">User Information</h3>
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Email:</span>
+                    <span className="font-semibold text-bdo-navy">{selectedUser.email}</span>
                   </div>
-                ))}
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Department:</span>
+                    <span className="font-semibold">{selectedUser.department}</span>
+                  </div>
+                </div>
               </div>
+
+              {/* Performance Stats */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">Performance</h3>
+                <div className="ui-grid-stats">
+                  <div className="ui-card p-4">
+                    <p className="text-xs text-gray-600 mb-1">Quizzes Taken</p>
+                    <p className="text-2xl font-bold text-bdo-navy">{selectedUser.quizzesTaken}</p>
+                  </div>
+                  <div className="ui-card p-4">
+                    <p className="text-xs text-gray-600 mb-1">Average Score</p>
+                    <p className="text-2xl font-bold text-bdo-navy">{selectedUser.averageScore}%</p>
+                  </div>
+                  <div className="ui-card p-4">
+                    <p className="text-xs text-gray-600 mb-1">Grade</p>
+                    <span className={`ui-pill ${getGradeColor(selectedUser.grade)}`}>
+                      {selectedUser.grade}
+                    </span>
+                  </div>
+                  <div className="ui-card p-4">
+                    <p className="text-xs text-gray-600 mb-1">Trend</p>
+                    <p className="text-2xl">{getTrendIcon(selectedUser.trend)}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Admin Actions */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">Admin Actions</h3>
+                <div className="flex flex-wrap gap-3">
+                  {!selectedUser.email.includes('admin') && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => handleElevateUser(selectedUser.email)}
+                    >
+                      <User className="h-4 w-4 mr-2" aria-hidden="true" />
+                      Elevate to Admin
+                    </Button>
+                  )}
+                  {(selectedUser.grade === 'Warning' || selectedUser.grade === 'Fail') && (
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      onClick={() => {
+                        handleWarnUser(selectedUser.email)
+                        setSelectedUser(null)
+                      }}
+                    >
+                      <AlertTriangle className="h-4 w-4 mr-2" aria-hidden="true" />
+                      Send Warning
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {/* Quiz History */}
+              {selectedUser.submissions.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">Quiz History</h3>
+                  <div className="space-y-2">
+                    {selectedUser.submissions.map((submission: any) => (
+                      <div key={submission.id} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-bdo-navy truncate">{submission.sessionName}</p>
+                          <p className="text-xs text-gray-500">
+                            {new Date(submission.completedAt).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <span className="text-sm font-bold text-bdo-navy ml-3">{submission.score}%</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

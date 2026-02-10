@@ -20,11 +20,14 @@ function App() {
   return (
     <AuthProvider>
       <Routes>
+        {/* Auth pages without Layout */}
+        <Route path="login" element={<LoginPage />} />
+        <Route path="register" element={<RegisterPage />} />
+        <Route path="password-reset" element={<PasswordResetPage />} />
+
+        {/* All other pages with Layout */}
         <Route path="/" element={<Layout />}>
           <Route index element={<HomePage />} />
-          <Route path="login" element={<LoginPage />} />
-          <Route path="register" element={<RegisterPage />} />
-          <Route path="password-reset" element={<PasswordResetPage />} />
           <Route path="dashboard" element={
             <ProtectedRoute>
               <DashboardPage />

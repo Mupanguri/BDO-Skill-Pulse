@@ -3,10 +3,27 @@ import cors from 'cors'
 import bcrypt from 'bcrypt'
 import jwt from 'jsonwebtoken'
 import crypto from 'crypto'
-import { PrismaClient } from '@prisma/client'
+import path from 'path'
+import { fileURLToPath } from 'url'
+import sqlite3 from 'sqlite3'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 const app = express()
 const PORT = process.env.PORT || 3001
+
+// Initialize SQLite database connection
+const dbPath = path.resolve(__dirname, 'prisma', 'dev.db')
+console.log('Database path:', dbPath)
+
+const db = new sqlite3.Database(dbPath, (err) => {
+  if (err) {
+    console.error('Error opening database:', err)
+  } else {
+    console.log('Database connected successfully')
+  }
+})
 
 // Middleware
 app.use(cors({
@@ -17,39 +34,29 @@ app.use(cors({
 }))
 app.use(express.json())
 
-// Initialize user credentials with hashed passwords
+// Initialize user credentials from database
 const initializeUserCredentials = async () => {
-  // Plain passwords for existing users (will be hashed)
-  const plainPasswords = {
-    'admin@bdo.co.zw': 'admin123',
-    'admin.test@bdo.co.zw': 'admin456',
-    'john.doe@bdo.co.zw': 'user123',
-    'jane.smith@bdo.co.zw': 'user456',
-    'mike.johnson@bdo.co.zw': 'user789',
-    'sarah.wilson@bdo.co.zw': 'user101'
-  }
-
-  const hashedCredentials = {}
-
-  for (const [email, password] of Object.entries(plainPasswords)) {
-    try {
-      const hashedPassword = await bcrypt.hash(password, 10)
-      const department = email.includes('admin') ? 'IT' :
-                        email.includes('john.doe') ? 'Tax' :
-                        email.includes('jane.smith') ? 'Audit' :
-                        email.includes('mike.johnson') ? 'IT' : 'Tax'
-
-      hashedCredentials[email] = {
-        password: hashedPassword,
-        department: department,
-        isAdmin: email.includes('admin')
+  return new Promise((resolve, reject) => {
+    db.all('SELECT email, password, department, isAdmin FROM User', [], (err, rows) => {
+      if (err) {
+        console.error('Error loading users from database:', err)
+        resolve({})
+        return
       }
-    } catch (error) {
-      console.error(`Error hashing password for ${email}:`, error)
-    }
-  }
 
-  return hashedCredentials
+      const credentials = {}
+      for (const user of rows) {
+        credentials[user.email] = {
+          password: user.password, // Already hashed in database
+          department: user.department,
+          isAdmin: Boolean(user.isAdmin)
+        }
+      }
+
+      console.log(`Loaded ${rows.length} users from database`)
+      resolve(credentials)
+    })
+  })
 }
 
 // Global user credentials (will be initialized on server start)

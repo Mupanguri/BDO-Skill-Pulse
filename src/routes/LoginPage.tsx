@@ -2,11 +2,12 @@ import { useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../lib/contexts/AuthContext'
 import Button from '../lib/components/Button'
-import { Key } from 'lucide-react'
+import { Key, Eye, EyeOff, AlertCircle } from 'lucide-react'
 
 function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const { login } = useAuth()
@@ -47,87 +48,149 @@ function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <img
-            src="/BDO Corner preview.png"
-            alt="BDO Logo"
-            className="mx-auto h-16 w-auto"
-          />
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Sign in to BDO Skills Pulse
-          </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
-            Training Effectiveness & Competency Validation Platform
-          </p>
+    <div className="h-screen w-full flex flex-col lg:flex-row overflow-hidden">
+      {/* Left Side - Image Section (60%) */}
+      <div className="hidden lg:flex lg:flex-[6] relative bg-gradient-to-br from-bdo-navy via-bdo-blue to-bdo-navy">
+        <div className="absolute inset-0 flex items-center justify-center p-12">
+          <div className="max-w-2xl">
+            <img
+              src="/BDO Corner preview.png"
+              alt="BDO Logo"
+              className="w-64 h-auto mb-8 drop-shadow-2xl"
+            />
+            <h1 className="text-5xl font-bold text-white mb-6 leading-tight">
+              Welcome to<br />BDO Skills Pulse
+            </h1>
+            <p className="text-xl text-blue-100 leading-relaxed">
+              Empowering teams through continuous learning and skill assessment.
+              Track progress, measure performance, and drive excellence across your organization.
+            </p>
+          </div>
         </div>
 
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          <div className="rounded-md shadow-sm -space-y-px">
+        {/* Decorative Elements */}
+        <div className="absolute top-10 right-10 w-32 h-32 bg-white/10 rounded-full blur-3xl"></div>
+        <div className="absolute bottom-20 left-20 w-40 h-40 bg-bdo-red/20 rounded-full blur-3xl"></div>
+      </div>
+
+      {/* Right Side - Form Section (40%) */}
+      <div className="flex-1 lg:flex-[4] flex items-center justify-center p-6 sm:p-12 bg-white dark:bg-gray-900 overflow-y-auto">
+        <div className="w-full max-w-md">
+          {/* Mobile Logo */}
+          <div className="lg:hidden text-center mb-8">
+            <img
+              src="/BDO Corner preview.png"
+              alt="BDO Logo"
+              className="mx-auto h-16 w-auto mb-4"
+            />
+          </div>
+
+          {/* Header */}
+          <div className="mb-8">
+            <h2 className="text-3xl font-bold text-bdo-navy mb-2">
+              Welcome Back
+            </h2>
+            <p className="text-gray-600">
+              Sign in to continue to your account
+            </p>
+          </div>
+
+          {/* Login Form */}
+          <form onSubmit={handleSubmit} className="space-y-5">
+            {/* Email Field */}
             <div>
-              <label htmlFor="email" className="sr-only">Email address</label>
+              <label htmlFor="email" className="ui-label">
+                Email Address
+              </label>
               <input
                 id="email"
                 name="email"
                 type="email"
                 autoComplete="email"
                 required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-red-500 focus:border-red-500 focus:z-10 sm:text-sm bg-white"
-                placeholder="Email address"
+                className="ui-field"
+                placeholder="you@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
             </div>
+
+            {/* Password Field */}
             <div>
-              <label htmlFor="password" className="sr-only">Password</label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-red-500 focus:border-red-500 focus:z-10 sm:text-sm bg-white"
-                placeholder="Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
+              <label htmlFor="password" className="ui-label">
+                Password
+              </label>
+              <div className="relative">
+                <input
+                  id="password"
+                  name="password"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
+                  required
+                  className="ui-field pr-10"
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                  onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-5 w-5" />
+                  ) : (
+                    <Eye className="h-5 w-5" />
+                  )}
+                </button>
+              </div>
             </div>
-          </div>
 
-          {error && (
-            <div className="text-red-600 text-sm text-center bg-red-50 p-3 rounded">
-              {error}
-            </div>
-          )}
+            {/* Error Message */}
+            {error && (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-start gap-2" role="alert">
+                <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" aria-hidden="true" />
+                <p className="text-sm text-red-700">{error}</p>
+              </div>
+            )}
 
-          <div className="flex items-center justify-between">
-            <div className="text-sm">
-              <Link to="/password-reset" className="font-medium text-red-600 hover:text-red-500 flex items-center">
-                <Key className="h-4 w-4 mr-1" />
-                Forgot password?
+            {/* Forgot Password Link */}
+            <div className="flex items-center justify-between">
+              <Link
+                to="/password-reset"
+                className="text-sm font-medium text-bdo-blue hover:text-blue-700 flex items-center gap-1 transition-colors"
+              >
+                <Key className="h-4 w-4" aria-hidden="true" />
+                <span>Forgot password?</span>
               </Link>
             </div>
-          </div>
 
-          <div>
+            {/* Submit Button */}
             <Button
               type="submit"
-              disabled={loading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+              variant="primary"
+              loading={loading}
+              fullWidth
+              className="h-12"
             >
-              {loading ? 'Signing in...' : 'Sign in'}
+              Sign In
             </Button>
-          </div>
 
-          <div className="text-center">
-            <div className="text-sm text-gray-600 bg-gray-50 p-4 rounded">
-              <strong>Test Credentials:</strong><br />
-              Admin: admin@bdo.co.zw / admin123<br />
-              User: john.doe@bdo.co.zw / user123
+            {/* Register Link */}
+            <div className="text-center pt-4 border-t border-gray-200">
+              <p className="text-sm text-gray-600">
+                Don't have an account?{' '}
+                <Link
+                  to="/register"
+                  className="font-semibold text-bdo-blue hover:text-blue-700 transition-colors"
+                >
+                  Create Account
+                </Link>
+              </p>
             </div>
-          </div>
-        </form>
+          </form>
+        </div>
       </div>
     </div>
   )

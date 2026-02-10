@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../lib/contexts/AuthContext'
 import { BarChart3, TrendingUp, Target, Clock, Award, AlertTriangle } from 'lucide-react'
+import { Line } from 'react-chartjs-2'
+import LoadingSpinner from '../lib/components/LoadingSpinner'
+import EmptyState from '../lib/components/EmptyState'
 
 interface QuizResult {
   id: string
@@ -145,36 +148,70 @@ function HistoryPage() {
   }
 
   if (loading) {
-    return (
-      <div className="text-center py-12">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-500 mx-auto mb-4"></div>
-        <p className="text-gray-600 dark:text-gray-400">Loading your quiz history...</p>
-      </div>
-    )
+    return <LoadingSpinner text="Loading your quiz history..." />
+  }
+
+  // Prepare chart data for trend visualization
+  const trendChartData = {
+    labels: results.map(r => new Date(r.completedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })),
+    datasets: [{
+      label: 'Score %',
+      data: results.map(r => r.score),
+      borderColor: '#0066CC',
+      backgroundColor: 'rgba(0, 102, 204, 0.1)',
+      tension: 0.4,
+      fill: true,
+      pointRadius: 4,
+      pointHoverRadius: 6
+    }]
+  }
+
+  const trendChartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        callbacks: {
+          label: (context: any) => `Score: ${context.parsed.y}%`
+        }
+      }
+    },
+    scales: {
+      y: {
+        beginAtZero: true,
+        max: 100,
+        title: { display: true, text: 'Score (%)' }
+      },
+      x: {
+        title: { display: true, text: 'Quiz Date' }
+      }
+    }
   }
 
   return (
-    <div className="max-w-6xl mx-auto space-y-8">
-      <div className="flex items-center justify-between">
+    <div className="ui-page page-enter">
+      {/* Header */}
+      <div className="ui-page-header mb-6">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Quiz History</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-1">Track your performance and improvement over time</p>
+          <h1 className="ui-page-title">Quiz History</h1>
+          <p className="ui-page-subtitle">Track your performance and improvement over time</p>
         </div>
       </div>
 
       {/* Warnings Section */}
       {warnings.length > 0 && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-6">
-          <div className="flex items-start">
-            <AlertTriangle className="h-6 w-6 text-red-600 mt-0.5 mr-3" />
-            <div className="flex-1">
-              <h3 className="text-lg font-semibold text-red-900 mb-2">Performance Warning</h3>
+        <div className="bg-red-50 border-2 border-red-200 rounded-xl p-6 mb-6">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-6 w-6 text-red-600 flex-shrink-0 mt-0.5" aria-hidden="true" />
+            <div className="flex-1 min-w-0">
+              <h3 className="text-lg font-bold text-red-900 mb-2">Performance Warning</h3>
               <p className="text-red-800 mb-4">
-                Your performance has been flagged by an administrator. Please review your quiz results and focus on improvement.
+                Your performance has been flagged. Please review your quiz results and focus on improvement.
               </p>
               <div className="space-y-2">
                 {warnings.map((warning: any) => (
-                  <div key={warning.id} className="bg-red-100 rounded p-3">
+                  <div key={warning.id} className="bg-red-100 rounded-lg p-3">
                     <p className="text-sm text-red-800">{warning.reason}</p>
                     <p className="text-xs text-red-600 mt-1">
                       Issued on {new Date(warning.timestamp).toLocaleDateString()} by {warning.adminEmail}
@@ -188,83 +225,78 @@ function HistoryPage() {
       )}
 
       {results.length === 0 ? (
-        <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-12 text-center border-2 border-dashed border-gray-300 dark:border-gray-600">
-          <div className="text-gray-500 dark:text-gray-400 mb-4">
-            <BarChart3 className="mx-auto h-16 w-16" />
-          </div>
-          <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">No Quiz History</h3>
-          <p className="text-gray-600 dark:text-gray-400 mb-6">
-            You haven't taken any quizzes yet. Complete your first quiz to start tracking your performance!
-          </p>
-            <div className="grid grid-cols-3 gap-6 mt-8">
-            <div className="bg-white dark:bg-gray-700 rounded-lg p-6 border border-gray-200 dark:border-gray-600">
-              <Target className="h-8 w-8 text-blue-600 dark:text-blue-400 mx-auto mb-3" />
-              <h4 className="font-semibold text-gray-900 dark:text-white mb-1">Performance Tracking</h4>
-              <p className="text-sm text-gray-600 dark:text-gray-400">Monitor your scores and identify areas for improvement</p>
-            </div>
-            <div className="bg-white dark:bg-gray-700 rounded-lg p-6 border border-gray-200 dark:border-gray-600">
-              <TrendingUp className="h-8 w-8 text-green-600 dark:text-green-400 mx-auto mb-3" />
-              <h4 className="font-semibold text-gray-900 dark:text-white mb-1">Progress Analytics</h4>
-              <p className="text-sm text-gray-600 dark:text-gray-400">Track your improvement over time with detailed statistics</p>
-            </div>
-            <div className="bg-white dark:bg-gray-700 rounded-lg p-6 border border-gray-200 dark:border-gray-600">
-              <Award className="h-8 w-8 text-purple-600 dark:text-purple-400 mx-auto mb-3" />
-              <h4 className="font-semibold text-gray-900 dark:text-white mb-1">Achievement Badges</h4>
-              <p className="text-sm text-gray-600 dark:text-gray-400">Earn recognition for your quiz performance milestones</p>
-            </div>
-          </div>
-        </div>
+        <EmptyState
+          icon={<BarChart3 className="h-full w-full" />}
+          title="No Quiz History"
+          description="You haven't taken any quizzes yet. Complete your first quiz to start tracking your performance!"
+        />
       ) : (
         <>
-          {/* Performance Overview */}
+          {/* Performance Trend Chart */}
+          <div className="ui-card-strong mb-8">
+            <h2 className="text-xl font-bold text-bdo-navy mb-4">Performance Trend</h2>
+            <div className="h-64 sm:h-80">
+              <Line data={trendChartData} options={trendChartOptions} />
+            </div>
+          </div>
+
+          {/* Performance Overview Stats */}
           {stats && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 border border-gray-200 dark:border-gray-700">
+            <div className="ui-grid-stats mb-8">
+              <div className="ui-card p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Quizzes</p>
-                    <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.totalQuizzes}</p>
+                    <p className="text-sm text-gray-600 mb-1">Total Quizzes</p>
+                    <p className="text-3xl font-bold text-bdo-navy">{stats.totalQuizzes}</p>
                   </div>
-                  <BarChart3 className="h-8 w-8 text-blue-600 dark:text-blue-400" />
+                  <div className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center">
+                    <BarChart3 className="h-6 w-6 text-blue-600" aria-hidden="true" />
+                  </div>
                 </div>
               </div>
 
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 border border-gray-200 dark:border-gray-700">
+              <div className="ui-card p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Average Score</p>
-                    <p className={`text-2xl font-bold ${getScoreColor(stats.averageScore)}`}>
+                    <p className="text-sm text-gray-600 mb-1">Average Score</p>
+                    <p className={`text-3xl font-bold ${getScoreColor(stats.averageScore)}`}>
                       {stats.averageScore}%
                     </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {getPerformanceLevel(stats.averageScore)}
+                    </p>
                   </div>
-                  <Target className="h-8 w-8 text-green-600 dark:text-green-400" />
+                  <div className="h-12 w-12 rounded-full bg-green-100 flex items-center justify-center">
+                    <Target className="h-6 w-6 text-green-600" aria-hidden="true" />
+                  </div>
                 </div>
-                <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
-                  {getPerformanceLevel(stats.averageScore)}
-                </p>
               </div>
 
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 border border-gray-200 dark:border-gray-700">
+              <div className="ui-card p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Best Score</p>
-                    <p className={`text-2xl font-bold ${getScoreColor(stats.bestScore)}`}>
+                    <p className="text-sm text-gray-600 mb-1">Best Score</p>
+                    <p className={`text-3xl font-bold ${getScoreColor(stats.bestScore)}`}>
                       {stats.bestScore}%
                     </p>
                   </div>
-                  <Award className="h-8 w-8 text-purple-600 dark:text-purple-400" />
+                  <div className="h-12 w-12 rounded-full bg-purple-100 flex items-center justify-center">
+                    <Award className="h-6 w-6 text-purple-600" aria-hidden="true" />
+                  </div>
                 </div>
               </div>
 
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 border border-gray-200 dark:border-gray-700">
+              <div className="ui-card p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Avg. Time</p>
-                    <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                    <p className="text-sm text-gray-600 mb-1">Avg. Time</p>
+                    <p className="text-3xl font-bold text-bdo-navy">
                       {Math.floor(stats.averageTime / 60)}:{(stats.averageTime % 60).toString().padStart(2, '0')}
                     </p>
                   </div>
-                  <Clock className="h-8 w-8 text-orange-600 dark:text-orange-400" />
+                  <div className="h-12 w-12 rounded-full bg-orange-100 flex items-center justify-center">
+                    <Clock className="h-6 w-6 text-orange-600" aria-hidden="true" />
+                  </div>
                 </div>
               </div>
             </div>
@@ -272,46 +304,46 @@ function HistoryPage() {
 
           {/* Performance Insights */}
           {stats && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 border border-gray-200 dark:border-gray-700">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Performance Insights</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+              <div className="ui-card-strong">
+                <h3 className="text-lg font-bold text-bdo-navy mb-4">Performance Insights</h3>
                 <div className="space-y-3">
                   <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-600 dark:text-gray-400">Improvement Trend</span>
-                    <span className={`text-sm font-medium ${stats.improvement >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    <span className="text-sm text-gray-600">Improvement Trend</span>
+                    <span className={`text-sm font-semibold ${stats.improvement >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                       {stats.improvement >= 0 ? '+' : ''}{stats.improvement}%
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-600 dark:text-gray-400">Consistency Score</span>
-                    <span className="text-sm font-medium text-blue-600">{stats.consistency}%</span>
+                    <span className="text-sm text-gray-600">Consistency Score</span>
+                    <span className="text-sm font-semibold text-bdo-blue">{stats.consistency}%</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-600 dark:text-gray-400">Performance Level</span>
-                    <span className={`text-sm font-medium ${getScoreColor(stats.averageScore)}`}>
+                    <span className="text-sm text-gray-600">Performance Level</span>
+                    <span className={`text-sm font-semibold ${getScoreColor(stats.averageScore)}`}>
                       {getPerformanceLevel(stats.averageScore)}
                     </span>
                   </div>
                 </div>
               </div>
 
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 border border-gray-200 dark:border-gray-700">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Next Goals</h3>
+              <div className="ui-card-strong">
+                <h3 className="text-lg font-bold text-bdo-navy mb-4">Next Goals</h3>
                 <div className="space-y-3">
-                  <div className="flex items-start space-x-3">
-                    <Target className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5" />
+                  <div className="flex items-start gap-3">
+                    <Target className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" aria-hidden="true" />
                     <div>
-                      <p className="text-sm font-medium text-gray-900 dark:text-white">Score Target</p>
-                      <p className="text-xs text-gray-600 dark:text-gray-400">
+                      <p className="text-sm font-semibold text-bdo-navy">Score Target</p>
+                      <p className="text-xs text-gray-600">
                         Aim for {Math.max(80, stats.averageScore + 5)}% on your next quiz
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-start space-x-3">
-                    <Clock className="h-5 w-5 text-green-600 dark:text-green-400 mt-0.5" />
+                  <div className="flex items-start gap-3">
+                    <Clock className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" aria-hidden="true" />
                     <div>
-                      <p className="text-sm font-medium text-gray-900 dark:text-white">Time Efficiency</p>
-                      <p className="text-xs text-gray-600 dark:text-gray-400">
+                      <p className="text-sm font-semibold text-bdo-navy">Time Efficiency</p>
+                      <p className="text-xs text-gray-600">
                         Try to complete quizzes in under {Math.floor(stats.averageTime / 60) + 1} minutes
                       </p>
                     </div>

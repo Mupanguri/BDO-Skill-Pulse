@@ -52,83 +52,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return saved ? JSON.parse(saved) : false;
   });
 
-  // Auto-refresh token before expiration
-  useEffect(() => {
-    if (accessToken && refreshToken) {
-      // Calculate time until token expires (15 minutes = 900000ms)
-      // Refresh 2 minutes before expiration to be safe
-      const refreshTime = 13 * 60 * 1000; // 13 minutes
-      
-      const refreshInterval = setInterval(async () => {
-        try {
-          const success = await refreshAccessToken();
-          if (!success) {
-            console.warn('Token refresh failed, logging out user');
-            logout();
-          } else {
-            console.log('Token refreshed successfully');
-          }
-        } catch (error) {
-          console.error('Auto token refresh failed:', error);
-          logout();
-        }
-      }, refreshTime);
-
-      return () => clearInterval(refreshInterval);
-    }
-  }, [accessToken, refreshToken, refreshAccessToken, logout]);
-
-  // Check session status periodically
-  useEffect(() => {
-    if (user && accessToken) {
-      const statusCheckInterval = setInterval(async () => {
-        try {
-          const isValid = await checkSessionStatus();
-          if (!isValid) {
-            logout();
-          }
-        } catch (error) {
-          console.error('Session status check failed:', error);
-        }
-      }, 5 * 60 * 1000); // Check every 5 minutes
-
-      return () => clearInterval(statusCheckInterval);
-    }
-  }, [user, accessToken]);
-
-  useEffect(() => {
-    localStorage.setItem('darkMode', JSON.stringify(isDarkMode));
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [isDarkMode]);
-
-  useEffect(() => {
-    if (user) {
-      localStorage.setItem('user', JSON.stringify(user));
-    } else {
-      localStorage.removeItem('user');
-    }
-  }, [user]);
-
-  useEffect(() => {
-    if (accessToken) {
-      localStorage.setItem('accessToken', accessToken);
-    } else {
-      localStorage.removeItem('accessToken');
-    }
-  }, [accessToken]);
-
-  useEffect(() => {
-    if (refreshToken) {
-      localStorage.setItem('refreshToken', refreshToken);
-    } else {
-      localStorage.removeItem('refreshToken');
-    }
-  }, [refreshToken]);
-
+  // Define functions first before they're used in useEffect
   const refreshAccessToken = useCallback(async (): Promise<boolean> => {
     if (!refreshToken) return false;
 
@@ -243,9 +167,82 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [accessToken, refreshAccessToken]);
 
-  const loadUser = () => {
-    // Placeholder for loading user logic
-  };
+  // Auto-refresh token before expiration
+  useEffect(() => {
+    if (accessToken && refreshToken) {
+      // Calculate time until token expires (15 minutes = 900000ms)
+      // Refresh 2 minutes before expiration to be safe
+      const refreshTime = 13 * 60 * 1000; // 13 minutes
+
+      const refreshInterval = setInterval(async () => {
+        try {
+          const success = await refreshAccessToken();
+          if (!success) {
+            console.warn('Token refresh failed, logging out user');
+            logout();
+          } else {
+            console.log('Token refreshed successfully');
+          }
+        } catch (error) {
+          console.error('Auto token refresh failed:', error);
+          logout();
+        }
+      }, refreshTime);
+
+      return () => clearInterval(refreshInterval);
+    }
+  }, [accessToken, refreshToken, refreshAccessToken, logout]);
+
+  // Check session status periodically
+  useEffect(() => {
+    if (user && accessToken) {
+      const statusCheckInterval = setInterval(async () => {
+        try {
+          const isValid = await checkSessionStatus();
+          if (!isValid) {
+            logout();
+          }
+        } catch (error) {
+          console.error('Session status check failed:', error);
+        }
+      }, 5 * 60 * 1000); // Check every 5 minutes
+
+      return () => clearInterval(statusCheckInterval);
+    }
+  }, [user, accessToken, checkSessionStatus, logout]);
+
+  useEffect(() => {
+    localStorage.setItem('darkMode', JSON.stringify(isDarkMode));
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [isDarkMode]);
+
+  useEffect(() => {
+    if (user) {
+      localStorage.setItem('user', JSON.stringify(user));
+    } else {
+      localStorage.removeItem('user');
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (accessToken) {
+      localStorage.setItem('accessToken', accessToken);
+    } else {
+      localStorage.removeItem('accessToken');
+    }
+  }, [accessToken]);
+
+  useEffect(() => {
+    if (refreshToken) {
+      localStorage.setItem('refreshToken', refreshToken);
+    } else {
+      localStorage.removeItem('refreshToken');
+    }
+  }, [refreshToken]);
 
   const value = {
     user,

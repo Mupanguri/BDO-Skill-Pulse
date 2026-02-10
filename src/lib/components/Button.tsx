@@ -1,4 +1,5 @@
 import React from 'react'
+import { Loader2 } from 'lucide-react'
 import { cn } from '../utils/cn'
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -6,6 +7,7 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   size?: 'sm' | 'md' | 'lg'
   loading?: boolean
   href?: string
+  fullWidth?: boolean
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(({
@@ -16,27 +18,29 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(({
   children,
   className,
   href,
+  fullWidth = false,
   ...rest
 }, ref) => {
-  const baseClasses = 'inline-flex items-center justify-center font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none'
+  const baseClasses = 'inline-flex items-center justify-center rounded-xl font-semibold transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-60 disabled:cursor-not-allowed active:scale-[0.98]'
 
   const variantClasses = {
-    primary: 'bg-bdo-red text-white hover:bg-red-700 focus:ring-bdo-red',
-    secondary: 'border border-bdo-red text-bdo-red hover:bg-bdo-red hover:text-white focus:ring-bdo-red',
-    tertiary: 'text-bdo-blue hover:text-blue-700 focus:ring-bdo-blue',
-    outline: 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 focus:ring-gray-500'
+    primary: 'bg-bdo-red hover:bg-red-700 text-white shadow-md hover:shadow-lg focus:ring-bdo-red',
+    secondary: 'bg-bdo-navy hover:bg-blue-800 text-white shadow-md focus:ring-bdo-navy',
+    outline: 'border-2 border-bdo-blue text-bdo-blue hover:bg-blue-50 focus:ring-bdo-blue',
+    tertiary: 'bg-gray-100 hover:bg-gray-200 text-bdo-navy focus:ring-gray-400'
   }
 
   const sizeClasses = {
-    sm: 'h-8 px-3 text-sm',
-    md: 'h-10 px-4 text-base',
-    lg: 'h-12 px-6 text-lg'
+    sm: 'h-9 px-3.5 text-sm',
+    md: 'h-11 px-5 text-sm',
+    lg: 'h-12 px-6 text-base'
   }
 
   const classes = cn(
     baseClasses,
     variantClasses[variant],
     sizeClasses[size],
+    fullWidth && 'w-full',
     className
   )
 
@@ -53,15 +57,17 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(({
       className={classes}
       disabled={disabled || loading}
       ref={ref}
+      aria-busy={loading}
       {...rest}
     >
-      {loading && (
-        <svg className="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
-          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-        </svg>
+      {loading ? (
+        <span className="inline-flex items-center gap-2">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+          <span>Loading...</span>
+        </span>
+      ) : (
+        children
       )}
-      {children}
     </button>
   )
 })

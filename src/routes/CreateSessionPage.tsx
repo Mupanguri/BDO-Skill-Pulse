@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Trash2, Save } from 'lucide-react'
+import { Plus, Trash2, AlertCircle } from 'lucide-react'
 import Button from '../lib/components/Button'
+import Breadcrumb from '../lib/components/Breadcrumb'
 
 interface Question {
   id: string
@@ -27,6 +28,7 @@ function CreateSessionPage() {
     }
   ])
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
   const addQuestion = () => {
     const newQuestion: Question = {
@@ -62,22 +64,26 @@ function CreateSessionPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
+    setError('')
 
     try {
       // Validate form
       if (!sessionName.trim() || !sessionDate || !sessionTime) {
-        alert('Please fill in all session details')
+        setError('Please fill in all session details')
+        setLoading(false)
         return
       }
 
       // Validate questions
       for (const question of questions) {
         if (!question.text.trim()) {
-          alert('Please fill in all question texts')
+          setError('Please fill in all question texts')
+          setLoading(false)
           return
         }
         if (question.options.some(opt => !opt.trim())) {
-          alert('Please fill in all answer options')
+          setError('Please fill in all answer options')
+          setLoading(false)
           return
         }
       }
@@ -136,47 +142,64 @@ function CreateSessionPage() {
       }
     } catch (error) {
       console.error('Failed to create session:', error)
-      alert('Failed to create session. Please try again.')
+      setError('Failed to create session. Please try again.')
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold text-bdo-navy">Create New Quiz Session</h1>
+    <div className="ui-page page-enter">
+      {/* Breadcrumb */}
+      <Breadcrumb items={[
+        { label: 'Dashboard', href: '/admin' },
+        { label: 'Create Session' }
+      ]} />
+
+      {/* Header */}
+      <div className="ui-page-header mb-6">
+        <h1 className="ui-page-title">Create New Quiz Session</h1>
         <Button variant="outline" onClick={() => navigate('/admin')}>
-          Back to Dashboard
+          Cancel
         </Button>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Error Message */}
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3" role="alert">
+            <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" aria-hidden="true" />
+            <p className="text-sm text-red-700">{error}</p>
+          </div>
+        )}
+
         {/* Session Details */}
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h2 className="text-xl font-semibold text-bdo-navy mb-4">Session Details</h2>
-          <div className="grid grid-cols-4 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+        <div className="ui-card-strong">
+          <h2 className="text-xl font-bold text-bdo-navy mb-4">Session Details</h2>
+          <div className="ui-grid-form">
+            <div className="col-span-full sm:col-span-2">
+              <label htmlFor="session-name" className="ui-label">
                 Session Name
               </label>
               <input
+                id="session-name"
                 type="text"
                 value={sessionName}
                 onChange={(e) => setSessionName(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-bdo-red"
+                className="ui-field w-full"
                 placeholder="e.g., Q1 2024 Tax Quiz"
                 required
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="target-department" className="ui-label">
                 Target Department
               </label>
               <select
+                id="target-department"
                 value={targetDepartment}
                 onChange={(e) => setTargetDepartment(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-bdo-red"
+                className="ui-field w-full"
                 required
               >
                 <option value="Tax">Tax Department</option>
@@ -185,26 +208,28 @@ function CreateSessionPage() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="session-date" className="ui-label">
                 Date
               </label>
               <input
+                id="session-date"
                 type="date"
                 value={sessionDate}
                 onChange={(e) => setSessionDate(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-bdo-red"
+                className="ui-field w-full"
                 required
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="session-time" className="ui-label">
                 Time
               </label>
               <input
+                id="session-time"
                 type="time"
                 value={sessionTime}
                 onChange={(e) => setSessionTime(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-bdo-red"
+                className="ui-field w-full"
                 required
               />
             </div>
@@ -212,20 +237,20 @@ function CreateSessionPage() {
         </div>
 
         {/* Questions */}
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold text-bdo-navy">Questions</h2>
-            <Button type="button" onClick={addQuestion}>
-              <Plus className="h-4 w-4 mr-2" />
+        <div className="ui-card-strong">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+            <h2 className="text-xl font-bold text-bdo-navy">Questions ({questions.length})</h2>
+            <Button type="button" variant="secondary" onClick={addQuestion} size="sm">
+              <Plus className="h-4 w-4 mr-2" aria-hidden="true" />
               Add Question
             </Button>
           </div>
 
           <div className="space-y-6">
             {questions.map((question, questionIndex) => (
-              <div key={question.id} className="border border-gray-200 rounded-lg p-4">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-medium text-bdo-navy">
+              <div key={question.id} className="border-2 border-gray-200 rounded-xl p-4 sm:p-6 hover:border-bdo-blue transition-colors">
+                <div className="flex items-start justify-between gap-3 mb-4">
+                  <h3 className="text-lg font-bold text-bdo-navy">
                     Question {questionIndex + 1}
                   </h3>
                   {questions.length > 1 && (
@@ -234,21 +259,23 @@ function CreateSessionPage() {
                       variant="outline"
                       size="sm"
                       onClick={() => removeQuestion(question.id)}
+                      aria-label={`Delete question ${questionIndex + 1}`}
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <Trash2 className="h-4 w-4 text-red-600" />
                     </Button>
                   )}
                 </div>
 
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`question-text-${question.id}`} className="ui-label">
                       Question Text
                     </label>
                     <textarea
+                      id={`question-text-${question.id}`}
                       value={question.text}
                       onChange={(e) => updateQuestion(question.id, 'text', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-bdo-red"
+                      className="ui-field w-full"
                       rows={3}
                       placeholder="Enter your question here..."
                       required
@@ -256,31 +283,33 @@ function CreateSessionPage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Answer Options
-                    </label>
-                    <div className="space-y-2">
+                    <label className="ui-label">Answer Options</label>
+                    <fieldset className="space-y-3">
+                      <legend className="sr-only">Select the correct answer</legend>
                       {question.options.map((option, optionIndex) => (
-                        <div key={optionIndex} className="flex items-center space-x-3">
+                        <div key={optionIndex} className="flex items-center gap-3">
                           <input
                             type="radio"
+                            id={`correct-${question.id}-${optionIndex}`}
                             name={`correct-${question.id}`}
                             checked={question.correctAnswer === optionIndex}
                             onChange={() => updateQuestion(question.id, 'correctAnswer', optionIndex)}
-                            className="text-bdo-red focus:ring-bdo-red"
+                            className="h-4 w-4 text-bdo-red focus:ring-bdo-red flex-shrink-0"
+                            aria-label={`Mark option ${optionIndex + 1} as correct answer`}
                           />
                           <input
                             type="text"
                             value={option}
                             onChange={(e) => updateQuestionOption(question.id, optionIndex, e.target.value)}
-                            className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-bdo-red"
+                            className="ui-field flex-1"
                             placeholder={`Option ${optionIndex + 1}`}
                             required
+                            aria-label={`Answer option ${optionIndex + 1}`}
                           />
                         </div>
                       ))}
-                    </div>
-                    <p className="text-sm text-gray-500 mt-1">
+                    </fieldset>
+                    <p className="text-xs text-gray-500 mt-2">
                       Select the radio button next to the correct answer
                     </p>
                   </div>
@@ -290,10 +319,23 @@ function CreateSessionPage() {
           </div>
         </div>
 
-        {/* Submit */}
-        <div className="flex justify-end">
-          <Button type="submit" loading={loading}>
-            <Save className="h-4 w-4 mr-2" />
+        {/* Submit Buttons */}
+        <div className="flex flex-col sm:flex-row gap-3 sm:justify-end">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => navigate('/admin')}
+            disabled={loading}
+            className="sm:order-1"
+          >
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            variant="primary"
+            loading={loading}
+            className="sm:order-2"
+          >
             Create Session
           </Button>
         </div>

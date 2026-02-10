@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/contexts/AuthContext'
-import { BarChart3, Users, Trophy, Clock, TrendingUp, PieChart, BarChart, LineChart } from 'lucide-react'
+import { BarChart3, Users, Trophy, Clock } from 'lucide-react'
 import FeedbackModal from '../lib/components/FeedbackModal'
+import Breadcrumb from '../lib/components/Breadcrumb'
+import LoadingSpinner from '../lib/components/LoadingSpinner'
+import EmptyState from '../lib/components/EmptyState'
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -223,19 +226,16 @@ function ResultsPage() {
   }
 
   if (loading) {
-    return (
-      <div className="flex justify-center items-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-bdo-red"></div>
-      </div>
-    )
+    return <LoadingSpinner text="Loading results..." />
   }
 
   if (!sessionId || !session) {
     return (
-      <div className="text-center">
-        <h1 className="text-2xl font-bold mb-4">Quiz Results</h1>
-        <p className="text-gray-600">Please select a session to view results.</p>
-      </div>
+      <EmptyState
+        icon={<BarChart3 className="h-full w-full" />}
+        title="No session selected"
+        description="Please select a quiz session to view detailed results and analytics."
+      />
     )
   }
 
@@ -337,69 +337,90 @@ function ResultsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="ui-page page-enter">
+      {/* Breadcrumb */}
+      <Breadcrumb items={[
+        { label: 'Dashboard', href: '/admin' },
+        { label: 'Results' }
+      ]} />
+
+      {/* Header */}
+      <div className="ui-page-header mb-6">
         <div>
-          <h1 className="text-3xl font-bold text-bdo-navy">Quiz Results</h1>
-          <h2 className="text-xl text-gray-600">{session.name}</h2>
-          <p className="text-gray-500">
-            {new Date(session.date).toLocaleDateString()} • {totalQuestions} questions
+          <h1 className="ui-page-title">{session.name}</h1>
+          <p className="ui-page-subtitle">
+            {new Date(session.date).toLocaleDateString()} • {totalQuestions} questions • {totalResponses} participants
           </p>
         </div>
       </div>
 
-      {/* Summary Stats */}
-      <div className="grid grid-cols-4 gap-6">
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <div className="flex items-center">
-            <Users className="h-8 w-8 text-bdo-blue mr-3" />
+      {/* Summary Stats - Responsive Grid */}
+      <div className="ui-grid-stats mb-8">
+        {/* Participants Card */}
+        <div className="ui-card p-6">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-2xl font-bold text-bdo-navy">{totalResponses}</p>
-              <p className="text-gray-600">Total Participants</p>
+              <p className="text-sm text-gray-600 mb-1">Total Participants</p>
+              <p className="text-3xl font-bold text-bdo-navy">{totalResponses}</p>
+            </div>
+            <div className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center">
+              <Users className="h-6 w-6 text-blue-600" aria-hidden="true" />
             </div>
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <div className="flex items-center">
-            <Trophy className="h-8 w-8 text-bdo-red mr-3" />
+        {/* Average Score Card */}
+        <div className="ui-card p-6">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-2xl font-bold text-bdo-navy">{averageScore}%</p>
-              <p className="text-gray-600">Average Score</p>
+              <p className="text-sm text-gray-600 mb-1">Average Score</p>
+              <p className="text-3xl font-bold text-bdo-navy">{averageScore}%</p>
+            </div>
+            <div className="h-12 w-12 rounded-full bg-red-100 flex items-center justify-center">
+              <Trophy className="h-6 w-6 text-bdo-red" aria-hidden="true" />
             </div>
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <div className="flex items-center">
-            <BarChart3 className="h-8 w-8 text-green-600 mr-3" />
+        {/* Questions Card */}
+        <div className="ui-card p-6">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-2xl font-bold text-bdo-navy">{totalQuestions}</p>
-              <p className="text-gray-600">Total Questions</p>
+              <p className="text-sm text-gray-600 mb-1">Total Questions</p>
+              <p className="text-3xl font-bold text-bdo-navy">{totalQuestions}</p>
+            </div>
+            <div className="h-12 w-12 rounded-full bg-green-100 flex items-center justify-center">
+              <BarChart3 className="h-6 w-6 text-green-600" aria-hidden="true" />
             </div>
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <div className="flex items-center">
-            <Clock className="h-8 w-8 text-purple-600 mr-3" />
+        {/* Average Time Card */}
+        <div className="ui-card p-6">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-2xl font-bold text-bdo-navy">{Math.floor(averageTime / 60)}:{(averageTime % 60).toString().padStart(2, '0')}</p>
-              <p className="text-gray-600">Avg. Time</p>
+              <p className="text-sm text-gray-600 mb-1">Avg. Time</p>
+              <p className="text-3xl font-bold text-bdo-navy">
+                {Math.floor(averageTime / 60)}:{(averageTime % 60).toString().padStart(2, '0')}
+              </p>
+            </div>
+            <div className="h-12 w-12 rounded-full bg-purple-100 flex items-center justify-center">
+              <Clock className="h-6 w-6 text-purple-600" aria-hidden="true" />
             </div>
           </div>
         </div>
       </div>
 
       {/* View Mode and Filters */}
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <div className="flex flex-wrap gap-4 items-center">
-          <div>
-            <label className="font-medium text-gray-700 mr-2">View:</label>
+      <div className="ui-card-strong mb-6">
+        <div className="flex flex-col sm:flex-row gap-4">
+          <div className="flex-1">
+            <label htmlFor="view-mode" className="ui-label">View Mode</label>
             <select
+              id="view-mode"
               value={viewMode}
               onChange={(e) => setViewMode(e.target.value as 'overview' | 'department' | 'grade')}
-              className="border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
+              className="ui-field w-full"
             >
               <option value="overview">Overview</option>
               <option value="department">By Department</option>
@@ -407,12 +428,13 @@ function ResultsPage() {
             </select>
           </div>
 
-          <div>
-            <label className="font-medium text-gray-700 mr-2">Department:</label>
+          <div className="flex-1">
+            <label htmlFor="department-filter" className="ui-label">Department</label>
             <select
+              id="department-filter"
               value={selectedDepartment}
               onChange={(e) => setSelectedDepartment(e.target.value)}
-              className="border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
+              className="ui-field w-full"
             >
               <option value="all">All Departments</option>
               {departmentStats.map(stat => (
@@ -421,12 +443,13 @@ function ResultsPage() {
             </select>
           </div>
 
-          <div>
-            <label className="font-medium text-gray-700 mr-2">Grade:</label>
+          <div className="flex-1">
+            <label htmlFor="grade-filter" className="ui-label">Grade</label>
             <select
+              id="grade-filter"
               value={selectedGrade}
               onChange={(e) => setSelectedGrade(e.target.value)}
-              className="border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
+              className="ui-field w-full"
             >
               <option value="all">All Grades</option>
               <option value="Distinction">Distinction (70-100)</option>
@@ -440,11 +463,9 @@ function ResultsPage() {
       </div>
 
       {/* Charts Section */}
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <div className="mb-4">
-          <h3 className="text-xl font-semibold text-bdo-navy">Performance Analytics</h3>
-        </div>
-        <div className="h-80">
+      <div className="ui-card-strong mb-8">
+        <h3 className="text-xl font-bold text-bdo-navy mb-4">Performance Analytics</h3>
+        <div className="h-64 sm:h-80 lg:h-96">
           {viewMode === 'grade' ? (
             <Pie data={getChartData()} options={chartOptions} />
           ) : (
@@ -455,11 +476,9 @@ function ResultsPage() {
 
       {/* Department Stats Table */}
       {viewMode === 'department' && departmentStats.length > 0 && (
-        <div className="bg-white rounded-lg shadow-md overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <h3 className="text-xl font-semibold text-bdo-navy">Department Performance Summary</h3>
-          </div>
-          <div className="overflow-x-auto">
+        <div className="ui-card-strong mb-8">
+          <h3 className="text-xl font-bold text-bdo-navy mb-4">Department Performance Summary</h3>
+          <div className="ui-table-wrap">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
@@ -499,57 +518,61 @@ function ResultsPage() {
       )}
 
       {/* Filtered Results */}
-      <div className="bg-white rounded-lg shadow-md">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h3 className="text-xl font-semibold text-bdo-navy">
-            Individual Results
-            {(selectedDepartment !== 'all' || selectedGrade !== 'all') &&
-              ` - Filtered (${getFilteredResponses().length} results)`}
-          </h3>
-        </div>
+      <div className="ui-card-strong">
+        <h3 className="text-xl font-bold text-bdo-navy mb-4">
+          Individual Results
+          {(selectedDepartment !== 'all' || selectedGrade !== 'all') &&
+            <span className="text-base font-normal text-gray-600 ml-2">
+              ({getFilteredResponses().length} results)
+            </span>
+          }
+        </h3>
 
-        <div className="p-6">
-          {getFilteredResponses().length === 0 ? (
-            <div className="text-center py-8">
-              <p className="text-gray-500">No results match the selected filters.</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {getFilteredResponses().map((response, index) => (
-                <div key={response.id} className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
-                  <div className="flex items-center space-x-4">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold ${index === 0 ? 'bg-yellow-500' :
-                        index === 1 ? 'bg-gray-400' :
-                          index === 2 ? 'bg-amber-600' :
-                            'bg-bdo-blue'
-                      }`}>
-                      {index + 1}
-                    </div>
-                    <div>
-                      <p className="font-semibold text-bdo-navy">{response.user.email}</p>
-                      <p className="text-sm text-gray-600">{response.user.department} Department</p>
-                    </div>
+        {getFilteredResponses().length === 0 ? (
+          <EmptyState
+            title="No results found"
+            description="No results match the selected filters. Try adjusting your filter criteria."
+          />
+        ) : (
+          <div className="space-y-3">
+            {getFilteredResponses().map((response, index) => (
+              <div key={response.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-4 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors gap-3">
+                <div className="flex items-center gap-3">
+                  <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0 ${
+                    index === 0 ? 'bg-yellow-500' :
+                    index === 1 ? 'bg-gray-400' :
+                    index === 2 ? 'bg-amber-600' :
+                    'bg-bdo-blue'
+                  }`}>
+                    {index + 1}
                   </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-bdo-navy truncate">{response.user.email}</p>
+                    <p className="text-sm text-gray-600">{response.user.department}</p>
+                  </div>
+                </div>
 
-                  <div className="text-right">
+                <div className="flex items-center justify-between sm:justify-end gap-4 sm:text-right">
+                  <div>
                     <p className="text-2xl font-bold text-bdo-navy">{response.score}%</p>
-                    <p className="text-sm text-gray-600">
-                      Grade: <span className={`font-medium ${getGradeFromScore(response.score) === 'Distinction' ? 'text-green-600' :
-                        getGradeFromScore(response.score) === 'Merit' ? 'text-blue-600' :
-                        getGradeFromScore(response.score) === 'Pass' ? 'text-yellow-600' :
-                        getGradeFromScore(response.score) === 'Warning' ? 'text-orange-600' : 'text-red-600'}`}>
-                        {getGradeFromScore(response.score)}
-                      </span>
-                    </p>
                     <p className="text-xs text-gray-500">
                       {new Date(response.completedAt).toLocaleDateString()}
                     </p>
                   </div>
+                  <div className={`ui-pill ${
+                    getGradeFromScore(response.score) === 'Distinction' ? 'bg-green-100 text-green-700' :
+                    getGradeFromScore(response.score) === 'Merit' ? 'bg-blue-100 text-blue-700' :
+                    getGradeFromScore(response.score) === 'Pass' ? 'bg-yellow-100 text-yellow-700' :
+                    getGradeFromScore(response.score) === 'Warning' ? 'bg-orange-100 text-orange-700' :
+                    'bg-red-100 text-red-700'
+                  }`}>
+                    {getGradeFromScore(response.score)}
+                  </div>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Feedback Modal */}

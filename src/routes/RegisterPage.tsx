@@ -104,72 +104,103 @@ function RegisterPage() {
 
   const getPasswordStrength = () => {
     const passed = passwordRequirements.filter(req => req.test(formData.password)).length
-    if (passed === 0) return { label: 'Very Weak', color: 'bg-red-500' }
-    if (passed <= 2) return { label: 'Weak', color: 'bg-orange-500' }
-    if (passed <= 4) return { label: 'Good', color: 'bg-yellow-500' }
-    return { label: 'Strong', color: 'bg-green-500' }
+    if (passed === 0) return { label: 'Very Weak', color: 'bg-red-500', width: '20%' }
+    if (passed <= 2) return { label: 'Weak', color: 'bg-orange-500', width: '40%' }
+    if (passed <= 4) return { label: 'Good', color: 'bg-yellow-500', width: '75%' }
+    return { label: 'Strong', color: 'bg-green-500', width: '100%' }
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <img
-            src="/bdo_logo.png"
-            alt="BDO Logo"
-            className="mx-auto h-16 w-auto object-contain"
-          />
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Create your account
-          </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
-            Join the BDO Quiz System
-          </p>
+    <div className="h-screen w-full flex flex-col lg:flex-row overflow-hidden">
+      {/* Left Side - Image Section (60%) */}
+      <div className="hidden lg:flex lg:flex-[6] relative bg-gradient-to-br from-bdo-navy via-bdo-blue to-bdo-navy">
+        <div className="absolute inset-0 flex items-center justify-center p-12">
+          <div className="max-w-2xl">
+            <img
+              src="/BDO Corner preview.png"
+              alt="BDO Logo"
+              className="w-64 h-auto mb-8 drop-shadow-2xl"
+            />
+            <h1 className="text-5xl font-bold text-white mb-6 leading-tight">
+              Join BDO<br />Skills Pulse
+            </h1>
+            <p className="text-xl text-blue-100 leading-relaxed">
+              Create your account and start your journey with continuous learning and skill development.
+              Track your progress and measure your professional growth.
+            </p>
+          </div>
         </div>
 
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          <div className="space-y-4">
+        {/* Decorative Elements */}
+        <div className="absolute top-10 right-10 w-32 h-32 bg-white/10 rounded-full blur-3xl"></div>
+        <div className="absolute bottom-20 left-20 w-40 h-40 bg-bdo-red/20 rounded-full blur-3xl"></div>
+      </div>
+
+      {/* Right Side - Form Section (40%) */}
+      <div className="flex-1 lg:flex-[4] flex items-center justify-center p-6 sm:p-12 bg-white dark:bg-gray-900 overflow-y-auto flex-shrink-0">
+        <div className="w-full max-w-md">
+          {/* Mobile Logo */}
+          <div className="lg:hidden text-center mb-8">
+            <img
+              src="/BDO Corner preview.png"
+              alt="BDO Logo"
+              className="mx-auto h-16 w-auto mb-4"
+            />
+          </div>
+
+          {/* Header */}
+          <div className="mb-8">
+            <h2 className="text-3xl font-bold text-bdo-navy mb-2">
+              Create Your Account
+            </h2>
+            <p className="text-gray-600">
+              Join BDO Skills Pulse
+            </p>
+          </div>
+
+          {/* Registration Form */}
+          <form onSubmit={handleSubmit} className="space-y-5">
             {/* Email Field */}
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-                Email address
+              <label htmlFor="email" className="ui-label">
+                Email Address
               </label>
-              <div className="mt-1 relative">
+              <div className="relative">
                 <input
                   id="email"
                   name="email"
                   type="email"
                   autoComplete="email"
                   required
-                  className="appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-red-500 focus:border-red-500 focus:z-10 sm:text-sm"
+                  className="ui-field pr-10"
                   placeholder="your.name@bdo.co.zw"
                   value={formData.email}
                   onChange={(e) => handleInputChange('email', e.target.value)}
                 />
                 {formData.email && (
-                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
+                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
                     {validateEmail(formData.email) ? (
-                      <CheckCircle className="h-5 w-5 text-green-500" />
+                      <CheckCircle className="h-5 w-5 text-green-500" aria-label="Valid email" />
                     ) : (
-                      <AlertCircle className="h-5 w-5 text-red-500" />
+                      <AlertCircle className="h-5 w-5 text-red-500" aria-label="Invalid email" />
                     )}
                   </div>
                 )}
               </div>
-              <p className="mt-1 text-xs text-gray-500">
+              <p className="mt-1.5 text-xs text-gray-500">
                 Must be a valid @bdo.co.zw email address
               </p>
             </div>
 
             {/* Department Field */}
             <div>
-              <label htmlFor="department" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="department" className="ui-label">
                 Department
               </label>
               <select
                 id="department"
                 name="department"
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-red-500 focus:border-red-500 sm:text-sm"
+                className="ui-field"
                 value={formData.department}
                 onChange={(e) => handleInputChange('department', e.target.value)}
               >
@@ -181,149 +212,166 @@ function RegisterPage() {
 
             {/* Password Field */}
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="password" className="ui-label">
                 Password
               </label>
-              <div className="mt-1 relative">
+              <div className="relative">
                 <input
                   id="password"
                   name="password"
                   type={showPassword ? 'text' : 'password'}
                   autoComplete="new-password"
                   required
-                  className="appearance-none relative block w-full px-3 py-2 pr-10 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-red-500 focus:border-red-500 focus:z-10 sm:text-sm"
+                  className="ui-field pr-10"
                   placeholder="Enter your password"
                   value={formData.password}
                   onChange={(e) => handleInputChange('password', e.target.value)}
                 />
                 <button
                   type="button"
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
                   onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
                 >
                   {showPassword ? (
-                    <EyeOff className="h-5 w-5 text-gray-400" />
+                    <EyeOff className="h-5 w-5" />
                   ) : (
-                    <Eye className="h-5 w-5 text-gray-400" />
+                    <Eye className="h-5 w-5" />
                   )}
                 </button>
               </div>
 
               {/* Password Strength Indicator */}
               {formData.password && (
-                <div className="mt-2">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs text-gray-600">Password Strength:</span>
-                    <span className={`text-xs font-medium ${getPasswordStrength().color.replace('bg-', 'text-')}`}>
+                <div className="mt-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-medium text-gray-600">Password Strength</span>
+                    <span className={`text-xs font-semibold ${getPasswordStrength().color.replace('bg-', 'text-')}`}>
                       {getPasswordStrength().label}
                     </span>
                   </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
                     <div
-                      className={`h-2 rounded-full transition-all duration-300 ${getPasswordStrength().color}`}
-                      style={{
-                        width: `${(passwordRequirements.filter(req => req.test(formData.password)).length / passwordRequirements.length) * 100}%`
-                      }}
-                    ></div>
+                      className={`h-full rounded-full transition-all duration-300 ${getPasswordStrength().color}`}
+                      style={{ width: getPasswordStrength().width }}
+                      role="progressbar"
+                      aria-valuenow={passwordRequirements.filter(req => req.test(formData.password)).length}
+                      aria-valuemin={0}
+                      aria-valuemax={passwordRequirements.length}
+                    />
                   </div>
                 </div>
               )}
 
               {/* Password Requirements */}
-              <div className="mt-2 space-y-1">
-                {passwordRequirements.map((req, index) => (
-                  <div key={index} className="flex items-center text-xs">
-                    {req.test(formData.password) ? (
-                      <CheckCircle className="h-3 w-3 text-green-500 mr-2" />
-                    ) : (
-                      <AlertCircle className="h-3 w-3 text-gray-400 mr-2" />
-                    )}
-                    <span className={req.test(formData.password) ? 'text-green-600' : 'text-gray-500'}>
-                      {req.label}
-                    </span>
-                  </div>
-                ))}
-              </div>
+              <fieldset className="mt-3 space-y-1.5">
+                <legend className="sr-only">Password requirements</legend>
+                {passwordRequirements.map((req, index) => {
+                  const met = req.test(formData.password)
+                  return (
+                    <div key={index} className="flex items-center gap-2 text-xs">
+                      {met ? (
+                        <CheckCircle className="h-3.5 w-3.5 text-green-500 flex-shrink-0" aria-hidden="true" />
+                      ) : (
+                        <div className="h-3.5 w-3.5 rounded-full border-2 border-gray-300 flex-shrink-0" aria-hidden="true" />
+                      )}
+                      <span className={met ? 'text-green-700 font-medium' : 'text-gray-500'}>
+                        {req.label}
+                      </span>
+                    </div>
+                  )
+                })}
+              </fieldset>
             </div>
 
             {/* Confirm Password Field */}
             <div>
-              <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="confirmPassword" className="ui-label">
                 Confirm Password
               </label>
-              <div className="mt-1 relative">
+              <div className="relative">
                 <input
                   id="confirmPassword"
                   name="confirmPassword"
                   type={showConfirmPassword ? 'text' : 'password'}
                   autoComplete="new-password"
                   required
-                  className="appearance-none relative block w-full px-3 py-2 pr-10 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-red-500 focus:border-red-500 focus:z-10 sm:text-sm"
+                  className="ui-field pr-10"
                   placeholder="Confirm your password"
                   value={formData.confirmPassword}
                   onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
                 />
                 <button
                   type="button"
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
                 >
                   {showConfirmPassword ? (
-                    <EyeOff className="h-5 w-5 text-gray-400" />
+                    <EyeOff className="h-5 w-5" />
                   ) : (
-                    <Eye className="h-5 w-5 text-gray-400" />
+                    <Eye className="h-5 w-5" />
                   )}
                 </button>
               </div>
               {formData.confirmPassword && (
-                <div className="mt-1 flex items-center text-xs">
+                <div className="mt-2 flex items-center gap-2 text-xs" role="status">
                   {formData.password === formData.confirmPassword ? (
                     <>
-                      <CheckCircle className="h-3 w-3 text-green-500 mr-2" />
-                      <span className="text-green-600">Passwords match</span>
+                      <CheckCircle className="h-3.5 w-3.5 text-green-500" aria-hidden="true" />
+                      <span className="text-green-700 font-medium">Passwords match</span>
                     </>
                   ) : (
                     <>
-                      <AlertCircle className="h-3 w-3 text-red-500 mr-2" />
-                      <span className="text-red-600">Passwords do not match</span>
+                      <AlertCircle className="h-3.5 w-3.5 text-red-500" aria-hidden="true" />
+                      <span className="text-red-600 font-medium">Passwords do not match</span>
                     </>
                   )}
                 </div>
               )}
             </div>
-          </div>
 
-          {error && (
-            <div className="text-red-600 text-sm text-center bg-red-50 p-3 rounded">
-              {error}
-            </div>
-          )}
+            {/* Error Message */}
+            {error && (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-start gap-2" role="alert">
+                <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" aria-hidden="true" />
+                <p className="text-sm text-red-700">{error}</p>
+              </div>
+            )}
 
-          {success && (
-            <div className="text-green-600 text-sm text-center bg-green-50 p-3 rounded">
-              {success}
-            </div>
-          )}
+            {/* Success Message */}
+            {success && (
+              <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-start gap-2" role="alert">
+                <CheckCircle className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" aria-hidden="true" />
+                <p className="text-sm text-green-700">{success}</p>
+              </div>
+            )}
 
-          <div>
+            {/* Submit Button */}
             <Button
               type="submit"
-              disabled={loading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+              variant="primary"
+              loading={loading}
+              fullWidth
+              className="h-12"
             >
-              {loading ? 'Creating Account...' : 'Create Account'}
+              Create Account
             </Button>
-          </div>
 
-          <div className="text-center">
-            <p className="text-sm text-gray-600">
-              Already have an account?{' '}
-              <Link to="/login" className="font-medium text-red-600 hover:text-red-500">
-                Sign in here
-              </Link>
-            </p>
-          </div>
-        </form>
+            {/* Login Link */}
+            <div className="text-center pt-4 border-t border-gray-200">
+              <p className="text-sm text-gray-600">
+                Already have an account?{' '}
+                <Link
+                  to="/login"
+                  className="font-semibold text-bdo-blue hover:text-blue-700 transition-colors"
+                >
+                  Sign In
+                </Link>
+              </p>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   )

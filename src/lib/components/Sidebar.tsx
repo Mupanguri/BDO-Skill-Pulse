@@ -10,21 +10,25 @@ import {
   User,
   Moon,
   Sun,
-  Home,
-  UserPlus,
   Bell,
-  X
+  X,
+  Menu
 } from 'lucide-react'
 import Button from './Button'
 
-function Sidebar() {
+interface SidebarProps {
+  mobileMenuOpen?: boolean
+  setMobileMenuOpen?: (open: boolean) => void
+  onNavigate?: () => void
+}
+
+function Sidebar({ mobileMenuOpen = false, setMobileMenuOpen, onNavigate }: SidebarProps) {
   const { user, logout, logoutAll, isDarkMode, toggleDarkMode } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [notifications, setNotifications] = useState<any[]>([])
   const [showNotifications, setShowNotifications] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
-  const [isCollapsed, setIsCollapsed] = useState(false)
 
   const navigationItems = user?.isAdmin ? [
     { path: '/admin', label: 'Dashboard', icon: Eye },
@@ -38,6 +42,10 @@ function Sidebar() {
 
   const handleNavigation = (path: string) => {
     navigate(path)
+    // Call onNavigate callback if provided (for mobile menu close)
+    if (onNavigate) {
+      onNavigate()
+    }
   }
 
   // Fetch notifications when user changes
@@ -82,15 +90,48 @@ function Sidebar() {
     setShowNotifications(!showNotifications)
   }
 
-  const toggleCollapsed = () => {
-    setIsCollapsed(!isCollapsed)
+  if (!user) {
+    return null
   }
 
   return (
-    <div className={`fixed left-0 top-0 h-full bg-white border-r border-gray-200 shadow-lg transition-all duration-300 ease-in-out ${isCollapsed ? 'w-16' : 'w-64'}`}>
-      <div className="flex flex-col h-full">
-        {/* Logo Section */}
-        <div className="flex items-center justify-center h-16 px-4 border-b border-gray-200">
+    <>
+      {/* Mobile header */}
+      <div className="lg:hidden fixed left-0 top-0 right-0 h-16 bg-white/95 dark:bg-gray-900/95 backdrop-blur border-b border-gray-200 dark:border-gray-700 z-50 px-4 flex items-center justify-between">
+        <img
+          src="/bdo_logo.png"
+          alt="BDO Logo"
+          className="h-10 w-auto object-contain"
+        />
+        <button
+          type="button"
+          onClick={() => setMobileMenuOpen?.(true)}
+          className="p-2 rounded-md text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-bdo-red"
+          aria-label="Open menu"
+        >
+          <Menu className="h-6 w-6" />
+        </button>
+      </div>
+
+      {/* Mobile overlay backdrop */}
+      {mobileMenuOpen && (
+        <div
+          className="lg:hidden fixed inset-0 bg-black/60 z-40 animate-in fade-in duration-200"
+          onClick={() => setMobileMenuOpen?.(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* Sidebar - overlay on mobile, fixed on desktop */}
+      <aside
+        className={`fixed left-0 top-16 lg:top-0 h-[calc(100%-4rem)] lg:h-full w-72 lg:w-64 bg-white/95 dark:bg-gray-900/95 backdrop-blur border-r border-gray-200 dark:border-gray-700 shadow-xl transition-transform duration-300 ease-in-out z-50 ${
+          mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+        } lg:translate-x-0`}
+        aria-label="Sidebar navigation"
+      >
+        <div className="flex flex-col h-full">
+        {/* Logo Section - Desktop only */}
+        <div className="hidden lg:flex items-center justify-between h-16 px-4 border-b border-gray-200 dark:border-gray-700">
           <img
             src="/bdo_logo.png"
             alt="BDO Logo"
@@ -98,8 +139,17 @@ function Sidebar() {
           />
         </div>
 
+        {/* Admin Badge */}
+        {user?.isAdmin && (
+          <div className="px-4 pt-4">
+            <div className="bg-bdo-red/10 border border-bdo-red/20 rounded-lg px-3 py-2">
+              <span className="text-xs font-semibold text-bdo-red">ADMIN MODE</span>
+            </div>
+          </div>
+        )}
+
         {/* Navigation Links */}
-        <div className="flex-1 px-4 py-6 space-y-2" role="navigation" aria-label="Main navigation">
+        <div className="flex-1 px-4 py-6 space-y-2.5" role="navigation" aria-label="Main navigation">
           {navigationItems.map((item) => {
             const Icon = item.icon
             const isActive = location.pathname === item.path
@@ -114,16 +164,16 @@ function Sidebar() {
                     handleNavigation(item.path)
                   }
                 }}
-                className={`w-full flex items-center px-4 py-3 text-left rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 ${
+                className={`w-full flex items-center px-4 py-3.5 text-left rounded-xl transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 ${
                   isActive
-                    ? 'bg-red-50 text-red-700 border-r-4 border-red-500'
-                    : 'text-gray-700 hover:bg-gray-100 hover:text-red-600'
-                } ${isCollapsed ? 'justify-center px-2' : ''}`}
+                    ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-700'
+                    : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-red-600 dark:hover:text-red-400 border border-transparent'
+                }`}
                 aria-current={isActive ? 'page' : undefined}
                 aria-label={`${item.label} ${isActive ? '(current page)' : ''}`}
               >
-                <Icon className={`h-5 w-5 ${isCollapsed ? '' : 'mr-3'}`} aria-hidden="true" />
-                {!isCollapsed && <span className="font-medium">{item.label}</span>}
+                <Icon className="h-5 w-5 mr-3" aria-hidden="true" />
+                <span className="font-medium">{item.label}</span>
               </button>
             )
           })}
@@ -131,150 +181,127 @@ function Sidebar() {
 
         {/* User Info Section */}
         {user && (
-          <div className="px-4 py-4 border-t border-gray-200 bg-red-50">
-            <div className="flex items-center space-x-3 mb-3">
-              <div className="w-10 h-10 bg-red-500 rounded-full flex items-center justify-center">
-                <span className="text-white font-bold text-sm">
+          <div className="px-4 py-4 border-t border-gray-200 dark:border-gray-700 bg-gradient-to-b from-gray-50 to-white dark:from-gray-800 dark:to-gray-900">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="h-10 w-10 rounded-full bg-bdo-navy flex items-center justify-center flex-shrink-0">
+                <span className="text-white font-semibold text-sm">
                   {user.email.charAt(0).toUpperCase()}
                 </span>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-red-900 truncate">
-                  {user.email}
-                </p>
-                <p className="text-xs text-red-700">
-                  {user.department} {user.isAdmin && '(Admin)'}
-                </p>
+                <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{user.email}</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">{user.department}</p>
               </div>
               {/* Notification Bell */}
               <button
                 onClick={toggleNotifications}
-                className="relative p-1 text-red-600 hover:text-red-800"
-                title="Notifications"
+                className="relative p-1.5 text-gray-600 dark:text-gray-300 hover:text-bdo-red dark:hover:text-bdo-red transition-colors flex-shrink-0"
+                aria-label={`Notifications ${unreadCount > 0 ? `(${unreadCount} unread)` : ''}`}
               >
                 <Bell className="h-5 w-5" />
                 {unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
-                    {unreadCount > 99 ? '99+' : unreadCount}
-                  </span>
+                  <>
+                    <span className="absolute -top-1 -right-1 bg-bdo-red text-white text-xs rounded-full h-5 w-5 flex items-center justify-center font-semibold">
+                      {unreadCount > 99 ? '99+' : unreadCount}
+                    </span>
+                    <span className="sr-only">{unreadCount} unread notifications</span>
+                  </>
                 )}
               </button>
             </div>
 
-            <div className="flex items-center justify-between">
+            <div className="space-y-2">
               {/* Dark Mode Toggle */}
-              <Button
-                variant="outline"
-                size="sm"
+              <button
                 onClick={toggleDarkMode}
-                className="p-2 border-red-300 text-red-600 hover:bg-red-100"
-                title={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                aria-label={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
               >
                 {isDarkMode ? (
-                  <Sun className="h-4 w-4" />
+                  <Sun className="h-4 w-4" aria-hidden="true" />
                 ) : (
-                  <Moon className="h-4 w-4" />
+                  <Moon className="h-4 w-4" aria-hidden="true" />
                 )}
-              </Button>
+                <span>{isDarkMode ? 'Light Mode' : 'Dark Mode'}</span>
+              </button>
 
-              {/* Logout Buttons */}
-              <div className="flex flex-col gap-1">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={logout}
-                  className="border-red-300 text-red-600 hover:bg-red-100"
-                >
-                  <LogOut className="h-4 w-4 mr-2" />
-                  Logout
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={logoutAll}
-                  className="border-orange-300 text-orange-600 hover:bg-orange-100"
-                >
-                  <LogOut className="h-4 w-4 mr-2" />
-                  Logout All
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Notification Panel */}
-        {showNotifications && user && (
-          <div className="absolute left-64 top-0 w-80 max-h-96 bg-white border border-gray-200 rounded-lg shadow-xl z-50 overflow-hidden">
-            <div className="flex items-center justify-between p-4 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900">Notifications</h3>
+              {/* Logout Button */}
               <button
-                onClick={() => setShowNotifications(false)}
-                className="text-gray-400 hover:text-gray-600"
+                onClick={logout}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-bdo-red dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors font-medium"
+                aria-label="Logout"
               >
-                <X className="h-5 w-5" />
+                <LogOut className="h-4 w-4" aria-hidden="true" />
+                <span>Logout</span>
+              </button>
+
+              {/* Logout All Button */}
+              <button
+                onClick={logoutAll}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg transition-colors"
+                aria-label="Logout from all devices"
+              >
+                <LogOut className="h-4 w-4" aria-hidden="true" />
+                <span>Logout All Devices</span>
               </button>
             </div>
-            <div className="max-h-80 overflow-y-auto">
-              {notifications.length === 0 ? (
-                <div className="p-4 text-center text-gray-500">
-                  No notifications yet
-                </div>
-              ) : (
-                notifications.map((notification: any) => (
-                  <div
-                    key={notification.id}
-                    className={`p-4 border-b border-gray-100 hover:bg-gray-50 cursor-pointer ${
-                      !notification.read ? 'bg-blue-50' : ''
-                    }`}
-                    onClick={() => markNotificationAsRead(notification.id)}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <h4 className="text-sm font-medium text-gray-900">
-                          {notification.title}
-                        </h4>
-                        <p className="text-sm text-gray-600 mt-1">
-                          {notification.message}
-                        </p>
-                        <p className="text-xs text-gray-400 mt-2">
-                          {new Date(notification.timestamp).toLocaleDateString()}
-                        </p>
-                      </div>
-                      {!notification.read && (
-                        <div className="w-2 h-2 bg-blue-500 rounded-full ml-2 mt-2"></div>
-                      )}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
           </div>
         )}
 
-        {/* Guest Actions */}
-        {!user && (
-          <div className="px-4 py-4 border-t border-gray-200 space-y-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate('/login')}
-              className="w-full border-red-300 text-red-600 hover:bg-red-100"
+        </div>
+      </aside>
+
+      {/* Notification Panel - positioned outside sidebar */}
+      {showNotifications && user && (
+        <div className="fixed lg:left-64 left-4 right-4 lg:right-auto top-20 lg:top-4 lg:w-80 max-h-96 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-2xl z-[60] overflow-hidden">
+          <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Notifications</h3>
+            <button
+              onClick={() => setShowNotifications(false)}
+              className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+              aria-label="Close notifications"
             >
-              Login
-            </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => navigate('/register')}
-              className="w-full bg-red-600 hover:bg-red-700"
-            >
-              <UserPlus className="h-4 w-4 mr-2" />
-              Register
-            </Button>
+              <X className="h-5 w-5" />
+            </button>
           </div>
-        )}
-      </div>
-    </div>
+          <div className="max-h-80 overflow-y-auto">
+            {notifications.length === 0 ? (
+              <div className="p-8 text-center text-gray-500 dark:text-gray-400">
+                <Bell className="h-12 w-12 mx-auto mb-3 text-gray-300 dark:text-gray-600" />
+                <p className="text-sm">No notifications yet</p>
+              </div>
+            ) : (
+              notifications.map((notification: any) => (
+                <div
+                  key={notification.id}
+                  className={`p-4 border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors ${
+                    !notification.read ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                  }`}
+                  onClick={() => markNotificationAsRead(notification.id)}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                        {notification.title}
+                      </h4>
+                      <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
+                        {notification.message}
+                      </p>
+                      <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
+                        {new Date(notification.timestamp).toLocaleDateString()}
+                      </p>
+                    </div>
+                    {!notification.read && (
+                      <div className="w-2 h-2 bg-bdo-blue rounded-full mt-2 flex-shrink-0"></div>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </>
   )
 }
 

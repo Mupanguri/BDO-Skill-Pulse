@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../lib/contexts/AuthContext'
 import { useNavigate } from 'react-router-dom'
+import { Calendar, Clock, FileText, Users, CheckCircle } from 'lucide-react'
 import Button from '../lib/components/Button'
+import LoadingSpinner from '../lib/components/LoadingSpinner'
+import EmptyState from '../lib/components/EmptyState'
 
 function CountdownTimer({ targetTime, onComplete }: { targetTime: number, onComplete: () => void }) {
   const [timeLeft, setTimeLeft] = useState(targetTime - Date.now())
@@ -56,6 +59,7 @@ function DashboardPage() {
   const [sessions, setSessions] = useState<Session[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [activeTab, setActiveTab] = useState<'active' | 'completed'>('active')
   const { user } = useAuth()
   const navigate = useNavigate()
 
@@ -128,20 +132,19 @@ function DashboardPage() {
   }
 
   if (loading) {
-    return (
-      <div className="text-center py-12">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-500 mx-auto mb-4"></div>
-        <p className="text-gray-600">Loading quiz sessions...</p>
-      </div>
-    )
+    return <LoadingSpinner text="Loading quiz sessions..." />
   }
 
   if (error) {
     return (
-      <div className="text-center py-12">
-        <div className="text-red-600 mb-4">{error}</div>
-        <Button onClick={fetchSessions}>Try Again</Button>
-      </div>
+      <EmptyState
+        title="Failed to load sessions"
+        description={error}
+        action={{
+          label: 'Try Again',
+          onClick: fetchSessions
+        }}
+      />
     )
   }
 
@@ -178,131 +181,205 @@ function DashboardPage() {
     }
   }
 
-  const activeSessions = sessions.filter(session => session.isActive)
+  const activeSessions = sessions.filter(session => session.isActive && !session.userHasCompleted)
+  const completedSessions = sessions.filter(session => session.isActive && session.userHasCompleted)
   const inactiveSessions = sessions.filter(session => !session.isActive)
 
+  const displaySessions = activeTab === 'active' ? activeSessions : completedSessions
+
   return (
-    <div className="max-w-4xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">BDO Skills Pulse - Quiz Sessions</h1>
-        <p className="text-gray-600">Available competency validation sessions for professional development</p>
+    <div className="ui-page page-enter">
+      {/* Header */}
+      <div className="ui-page-header mb-6 sm:mb-8">
+        <div>
+          <h1 className="ui-page-title">Quiz Sessions</h1>
+          <p className="ui-page-subtitle mt-1">Available competency validation sessions</p>
+        </div>
+        <Button variant="outline" onClick={() => navigate('/history')}>
+          View My History
+        </Button>
       </div>
 
-      {/* Active Sessions */}
-      {activeSessions.length > 0 && (
-        <div className="mb-8">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Active Sessions</h2>
-          <div className="space-y-4">
-            {activeSessions.map((session) => (
-              <div key={session.id} className={`bg-white rounded-lg shadow-md p-6 border ${session.userHasCompleted ? 'border-gray-200 opacity-75' : 'border-green-200'}`}>
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className={`text-xl font-semibold ${session.userHasCompleted ? 'text-gray-500' : 'text-gray-900'}`}>{session.name}</h3>
-                  <div className="flex gap-2">
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                      Active
-                    </span>
-                    {session.userHasCompleted && (
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                        Completed
-                      </span>
+      {/* No sessions at all */}
+      {sessions.length === 0 && (
+        <EmptyState
+          icon={<FileText className="h-full w-full" />}
+          title="No quiz sessions available"
+          description="There are currently no quiz sessions. Check back later or contact your administrator."
+        />
+      )}
+
+      {/* Tabs and Content */}
+      {sessions.length > 0 && (
+        <>
+          {/* Tabs */}
+          <div className="border-b border-gray-200 mb-6">
+            <nav className="flex gap-4 sm:gap-8" aria-label="Session tabs">
+              <button
+                onClick={() => setActiveTab('active')}
+                className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                  activeTab === 'active'
+                    ? 'border-bdo-red text-bdo-red'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+                aria-current={activeTab === 'active' ? 'page' : undefined}
+              >
+                Active Quizzes
+                <span className="ml-2 px-2 py-0.5 rounded-full text-xs bg-gray-100">
+                  {activeSessions.length}
+                </span>
+              </button>
+              <button
+                onClick={() => setActiveTab('completed')}
+                className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                  activeTab === 'completed'
+                    ? 'border-bdo-red text-bdo-red'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+                aria-current={activeTab === 'completed' ? 'page' : undefined}
+              >
+                Completed
+                <span className="ml-2 px-2 py-0.5 rounded-full text-xs bg-gray-100">
+                  {completedSessions.length}
+                </span>
+              </button>
+            </nav>
+          </div>
+
+          {/* Session Cards Grid */}
+          {displaySessions.length === 0 ? (
+            <EmptyState
+              icon={<CheckCircle className="h-full w-full" />}
+              title={activeTab === 'active' ? 'No active quizzes' : 'No completed quizzes'}
+              description={
+                activeTab === 'active'
+                  ? 'You have completed all available quizzes. Check the Completed tab to view your results.'
+                  : 'You have not completed any quizzes yet. Start a quiz from the Active tab.'
+              }
+            />
+          ) : (
+            <div className="ui-grid-responsive">
+              {displaySessions.map((session) => (
+                <div key={session.id} className="ui-card-strong animate-slide-up">
+                  {/* Header */}
+                  <div className="mb-4">
+                    <h3 className="text-lg font-bold text-bdo-navy mb-2 line-clamp-2">
+                      {session.name}
+                    </h3>
+                    {activeTab === 'completed' && session.userLowestScore !== undefined && (
+                      <div className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${
+                        session.userLowestScore >= 80 ? 'bg-green-100 text-green-700' :
+                        session.userLowestScore >= 70 ? 'bg-blue-100 text-blue-700' :
+                        session.userLowestScore >= 60 ? 'bg-yellow-100 text-yellow-700' :
+                        'bg-red-100 text-red-700'
+                      }`}>
+                        Score: {session.userLowestScore}%
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Session Details */}
+                  <div className="space-y-2 text-sm mb-4">
+                    <div className="flex items-center gap-2 text-gray-600">
+                      <Calendar className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
+                      <span>{new Date(session.date).toLocaleDateString()}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-gray-600">
+                      <Clock className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
+                      <span>{session.time}</span>
+                    </div>
+                    <div className="hidden sm:flex items-center gap-2 text-gray-600">
+                      <FileText className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
+                      <span>{session.questions.length} questions</span>
+                    </div>
+                    <div className="hidden sm:flex items-center gap-2 text-gray-600">
+                      <Users className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
+                      <span>{session._count.responses} participants</span>
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex flex-col gap-2 mt-auto">
+                    {activeTab === 'active' ? (
+                      <Button
+                        variant="primary"
+                        onClick={() => navigate(`/quiz/${session.id}`)}
+                        fullWidth
+                      >
+                        Start Quiz
+                      </Button>
+                    ) : (
+                      <>
+                        <Button
+                          variant="secondary"
+                          onClick={() => navigate(`/admin/results?session=${session.id}`)}
+                          fullWidth
+                        >
+                          View Results
+                        </Button>
+                        {session.userLowestScore && session.userLowestScore < 45 && (
+                          session.retakeCooldownUntil ? (
+                            <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+                              <CountdownTimer
+                                targetTime={session.retakeCooldownUntil}
+                                onComplete={() => fetchSessions()}
+                              />
+                            </div>
+                          ) : session.retakeAttempts === 0 ? (
+                            <Button
+                              variant="primary"
+                              onClick={() => handleRetakeQuiz(session.id)}
+                              fullWidth
+                            >
+                              Retake Quiz
+                            </Button>
+                          ) : (
+                            <div className="text-sm text-center text-gray-500 py-2">
+                              Retake completed
+                            </div>
+                          )
+                        )}
+                      </>
                     )}
                   </div>
                 </div>
-                <div className={`space-y-1 mb-4 ${session.userHasCompleted ? 'text-gray-500' : 'text-gray-600'}`}>
-                  <p><strong>Date:</strong> {new Date(session.date).toLocaleDateString()}</p>
-                  <p><strong>Time:</strong> {session.time}</p>
-                  <p><strong>Questions:</strong> {session.questions.length}</p>
-                  <p><strong>Participants:</strong> {session._count.responses}</p>
-                </div>
-                <div className="flex gap-4">
-                  {session.userHasCompleted ? (
-                    <div className="flex gap-2">
-                      <Button
-                        onClick={() => navigate(`/admin/results?session=${session.id}`)}
-                        className="bg-blue-600 hover:bg-blue-700"
-                      >
-                        View Results
-                      </Button>
-                      {session.userLowestScore && session.userLowestScore < 45 && (
-                        session.retakeCooldownUntil ? (
-                          <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
-                            <CountdownTimer
-                              targetTime={session.retakeCooldownUntil}
-                              onComplete={() => fetchSessions()}
-                            />
-                          </div>
-                        ) : session.retakeAttempts === 0 ? (
-                          <Button
-                            onClick={() => handleRetakeQuiz(session.id)}
-                            className="bg-orange-600 hover:bg-orange-700"
-                          >
-                            Retake Quiz
-                          </Button>
-                        ) : (
-                          <div className="text-sm text-gray-500">
-                            Retake completed
-                          </div>
-                        )
-                      )}
-                    </div>
-                  ) : (
-                    <Button
-                      onClick={() => navigate(`/quiz/${session.id}`)}
-                      className="bg-green-600 hover:bg-green-700"
-                    >
-                      Start Quiz
-                    </Button>
-                  )}
-                  <Button
-                    variant="outline"
-                    onClick={() => navigate('/history')}
-                  >
-                    View My History
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+              ))}
+            </div>
+          )}
+        </>
       )}
 
-      {/* Inactive Sessions */}
+      {/* Upcoming/Inactive Sessions */}
       {inactiveSessions.length > 0 && (
-        <div className="mb-8">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Upcoming Sessions</h2>
-          <div className="space-y-4">
+        <div className="mt-8">
+          <h2 className="text-xl font-bold text-bdo-navy mb-4">Upcoming Sessions</h2>
+          <div className="ui-grid-responsive">
             {inactiveSessions.map((session) => (
-              <div key={session.id} className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-xl font-semibold text-gray-900">{session.name}</h3>
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                    Inactive
+              <div key={session.id} className="ui-card opacity-75">
+                <div className="flex items-start justify-between mb-3">
+                  <h3 className="text-lg font-bold text-gray-700 line-clamp-2">
+                    {session.name}
+                  </h3>
+                  <span className="ui-pill bg-gray-200 text-gray-600 flex-shrink-0 ml-2">
+                    Upcoming
                   </span>
                 </div>
-                <div className="text-gray-600 space-y-1 mb-4">
-                  <p><strong>Date:</strong> {new Date(session.date).toLocaleDateString()}</p>
-                  <p><strong>Time:</strong> {session.time}</p>
-                  <p><strong>Questions:</strong> {session.questions.length}</p>
+                <div className="space-y-2 text-sm mb-4">
+                  <div className="flex items-center gap-2 text-gray-600">
+                    <Calendar className="h-4 w-4" aria-hidden="true" />
+                    <span>{new Date(session.date).toLocaleDateString()}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-gray-600">
+                    <Clock className="h-4 w-4" aria-hidden="true" />
+                    <span>{session.time}</span>
+                  </div>
                 </div>
                 <div className="text-gray-500 text-sm">
-                  This session is not yet active. Check back later or contact your administrator.
+                  This session is not yet active. Check back later.
                 </div>
               </div>
             ))}
           </div>
-        </div>
-      )}
-
-      {/* No Sessions */}
-      {sessions.length === 0 && (
-        <div className="bg-gray-50 rounded-lg p-8 text-center border-2 border-dashed border-gray-300">
-          <div className="text-gray-500 mb-4">
-            <svg className="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-          </div>
-          <h3 className="text-lg font-medium text-gray-900 mb-2">No Quiz Sessions</h3>
-          <p className="text-gray-600">There are currently no quiz sessions available. Check back later or contact your administrator.</p>
         </div>
       )}
     </div>
