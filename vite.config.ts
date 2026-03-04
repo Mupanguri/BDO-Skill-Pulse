@@ -15,5 +15,8 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist'
-  }
+  },
+  // Ensure API calls work in production by using relative URLs
+  // The backend will be deployed separately or as a Vercel serverless function
+  base: './'
 })

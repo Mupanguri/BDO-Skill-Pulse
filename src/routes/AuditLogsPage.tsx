@@ -54,7 +54,7 @@ function AuditLogsPage() {
 
     try {
       setLoading(true)
-      const response = await fetch('http://localhost:3001/api/audit/logs', {
+      const response = await fetch('/api/audit/logs', {
         headers: {
           'Authorization': `Bearer ${accessToken}`
         }
@@ -68,7 +68,7 @@ function AuditLogsPage() {
         const refreshed = await refreshAccessToken()
         if (refreshed) {
           // Retry with new token
-          const newResponse = await fetch('http://localhost:3001/api/audit/logs', {
+          const newResponse = await fetch('/api/audit/logs', {
             headers: {
               'Authorization': `Bearer ${accessToken}`
             }
@@ -494,3 +494,4 @@ function AuditLogsPage() {
 }
 
 export default AuditLogsPage
+

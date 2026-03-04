@@ -49,7 +49,7 @@ function SessionPage() {
 
   const fetchSession = async () => {
     try {
-      const response = await fetch(`http://localhost:3001/api/sessions/${sessionId}`)
+      const response = await fetch(`/api/sessions/${sessionId}`)
       if (response.ok) {
         const sessionData = await response.json()
         setSession(sessionData)
@@ -111,7 +111,7 @@ function SessionPage() {
 
     try {
       // Submit the quiz response
-      const response = await fetch('http://localhost:3001/api/responses', {
+      const response = await fetch('/api/responses', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -299,3 +299,4 @@ function SessionPage() {
 }
 
 export default SessionPage
+

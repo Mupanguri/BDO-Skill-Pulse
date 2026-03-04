@@ -110,7 +110,7 @@ function CreateSessionPage() {
         isActive: false
       }
 
-      const response = await fetch('http://localhost:3001/api/sessions', {
+      const response = await fetch('/api/sessions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -122,7 +122,7 @@ function CreateSessionPage() {
       if (response.ok) {
         // Send notifications to the target department
         try {
-          const notificationResponse = await fetch(`http://localhost:3001/api/department/${targetDepartment}/notifications`, {
+          const notificationResponse = await fetch(`/api/department/${targetDepartment}/notifications`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -372,3 +372,4 @@ function CreateSessionPage() {
 }
 
 export default CreateSessionPage
+

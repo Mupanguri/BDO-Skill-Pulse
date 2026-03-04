@@ -73,7 +73,7 @@ function RegisterPage() {
     }
 
     try {
-      const response = await fetch('http://localhost:3001/api/register', {
+      const response = await fetch('/api/register', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -378,3 +378,4 @@ function RegisterPage() {
 }
 
 export default RegisterPage
+

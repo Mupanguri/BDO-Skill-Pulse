@@ -141,3 +141,4 @@ export function getDepartmentStats(responses: QuizResponse[], department: 'Tax' 
 		lowestScore: Math.min(...scores)
 	};
 }
+

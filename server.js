@@ -201,12 +201,26 @@ logToFile(LOG_FILE, `SYSTEM_CONFIG: JWT_EXPIRES_IN=${JWT_EXPIRES_IN}, JWT_REFRES
 setInterval(logSystemHealth, 60000) // Log every minute
 
 // Middleware
-app.use(cors({
-  origin: ['http://localhost:3000', 'http://127.0.0.1:3000'],
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Allow requests with no origin (mobile apps, curl requests)
+    // For production, add your Vercel domain here
+    const allowedOrigins = [
+      'http://localhost:3000',
+      'http://127.0.0.1:3000',
+      'https://bdoskillpulse.vercel.app'
+    ]
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true)
+    } else {
+      callback(new Error('Not allowed by CORS'))
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
-}))
+}
+app.use(cors(corsOptions))
 app.use(express.json({ limit: '10mb' }))
 app.use(logRequest) // Add comprehensive logging middleware
 

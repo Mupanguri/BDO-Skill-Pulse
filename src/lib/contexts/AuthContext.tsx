@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect, useCallback } from 'react'
 import frontendLogger from '../utils/frontend-logger.js'
+import { API_ENDPOINTS } from '../services/api.js'
 
 // User interface
 export interface User {
@@ -53,7 +54,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (!refreshToken) return false;
 
     try {
-      const response = await fetch('http://localhost:3001/api/refresh', {
+      const response = await fetch(API_ENDPOINTS.REFRESH, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -81,7 +82,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       if (accessToken) {
         try {
-          await fetch('http://localhost:3001/api/logout', {
+          await fetch(API_ENDPOINTS.LOGOUT, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${accessToken}`,
@@ -110,7 +111,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       if (accessToken) {
         try {
-          await fetch('http://localhost:3001/api/logout-all', {
+          await fetch(API_ENDPOINTS.LOGOUT_ALL, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${accessToken}`,
@@ -148,7 +149,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     frontendLogger.formSubmission('login', { email, password: '[REDACTED]', rememberMe }, false);
     
     try {
-      const response = await fetch('http://localhost:3001/api/login', {
+      const response = await fetch(API_ENDPOINTS.LOGIN, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -205,7 +206,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     frontendLogger.formSubmission('register', { email, password: '[REDACTED]', department }, false);
     
     try {
-      const response = await fetch('http://localhost:3001/api/register', {
+      const response = await fetch(API_ENDPOINTS.REGISTER, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -250,7 +251,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (!accessToken) return false;
 
     try {
-      const response = await fetch('http://localhost:3001/api/session-status', {
+      const response = await fetch(API_ENDPOINTS.SESSION_STATUS, {
         headers: {
           'Authorization': `Bearer ${accessToken}`
         }
@@ -411,3 +412,4 @@ export const useAuth = () => {
   }
   return context;
 };
+

@@ -202,3 +202,4 @@ function FeedbackModal({ isOpen, onClose, onSubmit, quizName, loading = false }:
 }
 
 export default FeedbackModal
+

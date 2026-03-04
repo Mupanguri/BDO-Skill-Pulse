@@ -70,7 +70,7 @@ function AnalyticsPage() {
       setLoading(true)
       const token = localStorage.getItem('accessToken')
       console.log('Fetching analytics with token:', token ? 'present' : 'missing')
-      const response = await fetch(`http://localhost:3001/api/analytics?timeRange=${timeRange}`, {
+      const response = await fetch(`/api/analytics?timeRange=${timeRange}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }

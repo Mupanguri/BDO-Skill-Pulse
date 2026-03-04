@@ -25,3 +25,4 @@ function ProtectedRoute({ children, requireAuth = true, requireAdmin = false }: 
 }
 
 export default ProtectedRoute
+

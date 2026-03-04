@@ -142,7 +142,7 @@ function ResultsPage() {
     if (!user || !sessionId) return
 
     try {
-      const response = await fetch(`http://localhost:3001/api/feedback/check/${user.email}/${sessionId}`)
+      const response = await fetch(`/api/feedback/check/${user.email}/${sessionId}`)
       if (response.ok) {
         const data = await response.json()
         if (!data.hasFeedback) {
@@ -165,7 +165,7 @@ function ResultsPage() {
     setSubmittingFeedback(true)
 
     try {
-      const response = await fetch('http://localhost:3001/api/feedback', {
+      const response = await fetch('/api/feedback', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -194,7 +194,7 @@ function ResultsPage() {
 
   const fetchAllSessions = async () => {
     try {
-      const response = await fetch('http://localhost:3001/api/sessions')
+      const response = await fetch('/api/sessions')
       if (response.ok) {
         const data = await response.json()
         setAllSessions(data)
@@ -260,8 +260,8 @@ function ResultsPage() {
     try {
       // If in review mode and user is not admin, fetch only user's own response
       const url = isReviewMode && !user?.isAdmin
-        ? `http://localhost:3001/api/sessions/${id}?userEmail=${user?.email}`
-        : `http://localhost:3001/api/sessions/${id}`
+        ? `/api/sessions/${id}?userEmail=${user?.email}`
+        : `/api/sessions/${id}`
 
       const response = await fetch(url)
       if (response.ok) {
@@ -1123,3 +1123,4 @@ function ResultsPage() {
 }
 
 export default ResultsPage
+

@@ -43,8 +43,8 @@ function HistoryPage() {
 
     try {
       // Fetch user's submissions from API
-      const submissionsResponse = await fetch(`http://localhost:3001/api/user/${user.email}/submissions`)
-      const sessionsResponse = await fetch('http://localhost:3001/api/sessions')
+      const submissionsResponse = await fetch(`/api/user/${user.email}/submissions`)
+      const sessionsResponse = await fetch('/api/sessions')
 
       if (submissionsResponse.ok && sessionsResponse.ok) {
         const submissions = await submissionsResponse.json()
@@ -137,7 +137,7 @@ function HistoryPage() {
     if (!user) return
 
     try {
-      const response = await fetch(`http://localhost:3001/api/user/${user.email}/warnings`)
+      const response = await fetch(`/api/user/${user.email}/warnings`)
       if (response.ok) {
         const data = await response.json()
         setWarnings(data.warnings)
@@ -427,3 +427,4 @@ function HistoryPage() {
 }
 
 export default HistoryPage
+

@@ -58,7 +58,7 @@ function Sidebar({ mobileMenuOpen = false, setMobileMenuOpen, onNavigate }: Side
     if (!user) return
 
     try {
-      const response = await fetch(`http://localhost:3001/api/user/${user.email}/notifications`)
+      const response = await fetch(`/api/user/${user.email}/notifications`)
       if (response.ok) {
         const data = await response.json()
         setNotifications(data.notifications)
@@ -72,7 +72,7 @@ function Sidebar({ mobileMenuOpen = false, setMobileMenuOpen, onNavigate }: Side
 
   const markNotificationAsRead = async (notificationId: string) => {
     try {
-      await fetch(`http://localhost:3001/api/user/${user?.email}/notifications/${notificationId}/read`, {
+      await fetch(`/api/user/${user?.email}/notifications/${notificationId}/read`, {
         method: 'PATCH'
       })
       // Update local state
@@ -327,3 +327,4 @@ function Sidebar({ mobileMenuOpen = false, setMobileMenuOpen, onNavigate }: Side
 }
 
 export default Sidebar
+

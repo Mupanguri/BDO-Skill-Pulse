@@ -69,7 +69,7 @@ function DashboardPage() {
 
   const fetchSessions = async () => {
     try {
-      const response = await fetch('http://localhost:3001/api/sessions')
+      const response = await fetch('/api/sessions')
       if (response.ok) {
         const data = await response.json()
 
@@ -79,8 +79,8 @@ function DashboardPage() {
             data.map(async (session: Session) => {
               try {
                 // Get user's submissions for this session
-                const submissionsResponse = await fetch(`http://localhost:3001/api/user/${user.email}/submissions`)
-                const retakeResponse = await fetch(`http://localhost:3001/api/user/${user.email}/session/${session.id}/retake-status`)
+                const submissionsResponse = await fetch(`/api/user/${user.email}/submissions`)
+                const retakeResponse = await fetch(`/api/user/${user.email}/session/${session.id}/retake-status`)
 
                 if (submissionsResponse.ok) {
                   const submissions = await submissionsResponse.json()
@@ -180,14 +180,14 @@ function DashboardPage() {
 
     try {
       // Get the user's lowest score for this session
-      const submissionsResponse = await fetch(`http://localhost:3001/api/user/${user.email}/submissions`)
+      const submissionsResponse = await fetch(`/api/user/${user.email}/submissions`)
       if (submissionsResponse.ok) {
         const submissions = await submissionsResponse.json()
         const sessionSubmissions = submissions.filter((sub: any) => sub.sessionId === sessionId)
         const lowestScore = Math.min(...sessionSubmissions.map((sub: any) => sub.score))
 
         // Start the retake cooldown
-        const response = await fetch(`http://localhost:3001/api/user/${user.email}/session/${sessionId}/start-retake`, {
+        const response = await fetch(`/api/user/${user.email}/session/${sessionId}/start-retake`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -453,3 +453,4 @@ function DashboardPage() {
 }
 
 export default DashboardPage
+

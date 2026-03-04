@@ -20,7 +20,7 @@ export const LogViewer: React.FC = () => {
   // Fetch logs from server
   const fetchLogs = async () => {
     try {
-      const response = await fetch('http://localhost:3001/api/logs')
+      const response = await fetch('/api/logs')
       if (response.ok) {
         const logData = await response.json()
         setLogs(logData.logs || [])
@@ -95,7 +95,7 @@ export const LogViewer: React.FC = () => {
 
   const clearLogs = async () => {
     try {
-      await fetch('http://localhost:3001/api/logs/clear', { method: 'POST' })
+      await fetch('/api/logs/clear', { method: 'POST' })
       setLogs([])
     } catch (error) {
       console.error('Error clearing logs:', error)

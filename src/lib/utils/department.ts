@@ -28,3 +28,4 @@ export function getDepartmentColor(department: Department): string {
 export function getDepartmentDisplayName(department: Department): string {
 	return department;
 }
+

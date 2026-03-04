@@ -47,7 +47,7 @@ function ProfilePage() {
 
   const fetchUserProfile = async (email: string) => {
     try {
-      const response = await fetch(`http://localhost:3001/api/user/${email}/profile`, {
+      const response = await fetch(`/api/user/${email}/profile`, {
         headers: {
           'Authorization': `Bearer ${accessToken}`
         }
@@ -89,7 +89,7 @@ function ProfilePage() {
         return
       }
 
-      const response = await fetch(`http://localhost:3001/api/user/${user?.email}/profile`, {
+      const response = await fetch(`/api/user/${user?.email}/profile`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -133,7 +133,7 @@ function ProfilePage() {
     }
 
     try {
-      const response = await fetch(`http://localhost:3001/api/user/${user?.email}/password`, {
+      const response = await fetch(`/api/user/${user?.email}/password`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -203,7 +203,7 @@ function ProfilePage() {
       // For now, we'll use a data URL as the profile image
       const imageUrl = imagePreview
 
-      const response = await fetch(`http://localhost:3001/api/user/${user?.email}/profile`, {
+      const response = await fetch(`/api/user/${user?.email}/profile`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',

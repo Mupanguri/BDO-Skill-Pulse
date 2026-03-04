@@ -44,7 +44,7 @@ function PasswordResetPage() {
     setError('')
 
     try {
-      const response = await fetch(`http://localhost:3001/api/password-reset/check/${email}`)
+      const response = await fetch(`/api/password-reset/check/${email}`)
       const data = await response.json()
 
       if (response.ok) {
@@ -82,7 +82,7 @@ function PasswordResetPage() {
     setSuccess('')
 
     try {
-      const response = await fetch('http://localhost:3001/api/password-reset/reset', {
+      const response = await fetch('/api/password-reset/reset', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -116,7 +116,7 @@ function PasswordResetPage() {
     setSuccess('')
 
     try {
-      const response = await fetch('http://localhost:3001/api/password-reset/contact-admin', {
+      const response = await fetch('/api/password-reset/contact-admin', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -345,3 +345,4 @@ function PasswordResetPage() {
 }
 
 export default PasswordResetPage
+

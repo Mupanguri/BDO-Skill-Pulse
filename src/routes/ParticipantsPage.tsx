@@ -40,12 +40,12 @@ function ParticipantsPage() {
   const fetchParticipants = async () => {
     try {
       // Get all users and their submissions
-      const usersResponse = await fetch('http://localhost:3001/api/users', {
+      const usersResponse = await fetch('/api/users', {
         headers: {
           'Authorization': `Bearer ${accessToken}`
         }
       })
-      const sessionsResponse = await fetch('http://localhost:3001/api/sessions', {
+      const sessionsResponse = await fetch('/api/sessions', {
         headers: {
           'Authorization': `Bearer ${accessToken}`
         }
@@ -58,7 +58,7 @@ function ParticipantsPage() {
         // Calculate performance for each user
         const participantsData = await Promise.all(
           users.map(async (user: any) => {
-            const submissionsResponse = await fetch(`http://localhost:3001/api/user/${user.email}/submissions`, {
+            const submissionsResponse = await fetch(`/api/user/${user.email}/submissions`, {
               headers: {
                 'Authorization': `Bearer ${accessToken}`
               }
@@ -173,7 +173,7 @@ function ParticipantsPage() {
 
   const handleWarnUser = async (userEmail: string) => {
     try {
-      const response = await fetch(`http://localhost:3001/api/user/${userEmail}/warn`, {
+      const response = await fetch(`/api/user/${userEmail}/warn`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -203,7 +203,7 @@ function ParticipantsPage() {
     }
 
     try {
-      const response = await fetch(`http://localhost:3001/api/user/${userEmail}/elevate`, {
+      const response = await fetch(`/api/user/${userEmail}/elevate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -234,7 +234,7 @@ function ParticipantsPage() {
     }
 
     try {
-      const response = await fetch(`http://localhost:3001/api/user/${userEmail}/demote`, {
+      const response = await fetch(`/api/user/${userEmail}/demote`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -568,3 +568,4 @@ function ParticipantsPage() {
 }
 
 export default ParticipantsPage
+

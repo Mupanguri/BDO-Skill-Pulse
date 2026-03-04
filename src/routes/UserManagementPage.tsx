@@ -32,7 +32,7 @@ function UserManagementPage() {
 
   const fetchUsers = async () => {
     try {
-      const response = await fetch('http://localhost:3001/api/users', {
+      const response = await fetch('/api/users', {
         headers: {
           'Authorization': `Bearer ${accessToken}`
         }
@@ -57,7 +57,7 @@ function UserManagementPage() {
     }
 
     try {
-      const response = await fetch(`http://localhost:3001/api/user/${userEmail}/promote`, {
+      const response = await fetch(`/api/user/${userEmail}/promote`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -85,7 +85,7 @@ function UserManagementPage() {
     }
 
     try {
-      const response = await fetch(`http://localhost:3001/api/user/${userEmail}/demote`, {
+      const response = await fetch(`/api/user/${userEmail}/demote`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',

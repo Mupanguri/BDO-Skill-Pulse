@@ -62,7 +62,7 @@ function QuizPage() {
 
   const loadQuiz = async () => {
     try {
-      const response = await fetch(`http://localhost:3001/api/sessions/${sessionId}`, {
+      const response = await fetch(`/api/sessions/${sessionId}`, {
         headers: {
           'Authorization': `Bearer ${accessToken}`
         }
@@ -75,7 +75,7 @@ function QuizPage() {
         const refreshed = await refreshAccessToken()
         if (refreshed) {
           // Retry with new token
-          const newResponse = await fetch(`http://localhost:3001/api/sessions/${sessionId}`, {
+          const newResponse = await fetch(`/api/sessions/${sessionId}`, {
             headers: {
               'Authorization': `Bearer ${accessToken}`
             }
@@ -104,7 +104,7 @@ function QuizPage() {
     if (!user || !sessionId || !accessToken) return
 
     try {
-      const response = await fetch(`http://localhost:3001/api/quiz-progress/${user.email}/${sessionId}`, {
+      const response = await fetch(`/api/quiz-progress/${user.email}/${sessionId}`, {
         headers: {
           'Authorization': `Bearer ${accessToken}`
         }
@@ -142,7 +142,7 @@ function QuizPage() {
     setAutoSaveStatus('saving')
 
     try {
-      const response = await fetch('http://localhost:3001/api/quiz-progress', {
+      const response = await fetch('/api/quiz-progress', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -164,7 +164,7 @@ function QuizPage() {
         const refreshed = await refreshAccessToken()
         if (refreshed) {
           // Retry with new token
-          const newResponse = await fetch('http://localhost:3001/api/quiz-progress', {
+          const newResponse = await fetch('/api/quiz-progress', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -214,7 +214,7 @@ function QuizPage() {
     const totalTimeSpent = Math.floor((Date.now() - quizStartTime) / 1000)
 
     try {
-      const response = await fetch('http://localhost:3001/api/responses', {
+      const response = await fetch('/api/responses', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -234,7 +234,7 @@ function QuizPage() {
       if (response.ok) {
         // Mark retake as completed if this was a retake
         if (isRetake) {
-          await fetch(`http://localhost:3001/api/user/${user.email}/session/${sessionId}/complete-retake`, {
+          await fetch(`/api/user/${user.email}/session/${sessionId}/complete-retake`, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${accessToken}`
@@ -249,7 +249,7 @@ function QuizPage() {
         const refreshed = await refreshAccessToken()
         if (refreshed) {
           // Retry with new token
-          const newResponse = await fetch('http://localhost:3001/api/responses', {
+          const newResponse = await fetch('/api/responses', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -268,7 +268,7 @@ function QuizPage() {
           if (newResponse.ok) {
             // Mark retake as completed if this was a retake
             if (isRetake) {
-              await fetch(`http://localhost:3001/api/user/${user.email}/session/${sessionId}/complete-retake`, {
+              await fetch(`/api/user/${user.email}/session/${sessionId}/complete-retake`, {
                 method: 'POST',
                 headers: {
                   'Authorization': `Bearer ${accessToken}`
@@ -494,3 +494,4 @@ function QuizPage() {
 }
 
 export default QuizPage
+

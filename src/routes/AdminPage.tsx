@@ -31,7 +31,7 @@ function AdminPage() {
     if (!accessToken) return
 
     try {
-      const response = await fetch('http://localhost:3001/api/sessions', {
+      const response = await fetch('/api/sessions', {
         headers: {
           'Authorization': `Bearer ${accessToken}`
         }
@@ -44,7 +44,7 @@ function AdminPage() {
         const refreshed = await refreshAccessToken()
         if (refreshed) {
           // Retry with new token
-          const newResponse = await fetch('http://localhost:3001/api/sessions', {
+          const newResponse = await fetch('/api/sessions', {
             headers: {
               'Authorization': `Bearer ${accessToken}`
             }
@@ -69,7 +69,7 @@ function AdminPage() {
 
     try {
       console.log(`Toggling session ${sessionId} from ${isActive} to ${!isActive}`)
-      const response = await fetch(`http://localhost:3001/api/sessions/${sessionId}`, {
+      const response = await fetch(`/api/sessions/${sessionId}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -91,7 +91,7 @@ function AdminPage() {
         const refreshed = await refreshAccessToken()
         if (refreshed) {
           // Retry with new token
-          const newResponse = await fetch(`http://localhost:3001/api/sessions/${sessionId}`, {
+          const newResponse = await fetch(`/api/sessions/${sessionId}`, {
             method: 'PATCH',
             headers: {
               'Content-Type': 'application/json',
@@ -246,3 +246,4 @@ function AdminPage() {
 }
 
 export default AdminPage
+
