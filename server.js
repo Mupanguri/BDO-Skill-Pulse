@@ -18,10 +18,25 @@ const connectToDatabase = async () => {
   const dbStartTime = logger.startPerformance('database_connection')
   try {
     const { Pool } = await import('pg')
-    pool = new Pool({
-      connectionString: process.env.DATABASE_URL || 'postgresql://postgres:windows@localhost:5432/bdo_quiz_system',
-      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
-    })
+    
+    // Build connection options
+    const connectionOptions = {
+      connectionString: process.env.DATABASE_URL || 'postgresql://postgres:windows@localhost:5432/bdo_quiz_system'
+    }
+    
+    // For production (Supabase), configure SSL properly
+    if (process.env.NODE_ENV === 'production') {
+      connectionOptions.ssl = {
+        rejectUnauthorized: false,
+        // Supabase uses self-signed certificates
+        ca: undefined,
+        servername: 'db.gcqocoyqmzwzkfpehbju.supabase.co'
+      }
+    } else {
+      connectionOptions.ssl = false
+    }
+    
+    pool = new Pool(connectionOptions)
 
     // Test database connection
     await pool.query('SELECT NOW()')
