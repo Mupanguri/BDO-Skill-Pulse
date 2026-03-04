@@ -2,7 +2,7 @@
 // Use VITE_API_URL env var for external API (e.g., Render)
 // Fall back to empty string for same-domain deployment
 // @ts-ignore - VITE_* env vars are available in Vite
-const API_BASE_URL = (typeof import.meta.env !== 'undefined' ? import.meta.env.VITE_API_URL : '') || '';
+const API_BASE_URL = 'https://bdo-skill-pulse.onrender.com'; // Hardcoded for production
 
 export const API_ENDPOINTS = {
   // Auth
