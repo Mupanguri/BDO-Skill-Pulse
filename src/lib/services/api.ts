@@ -1,8 +1,8 @@
 // Centralized API configuration
-// Use relative URLs (empty string) so API calls go to the same domain
-// For production with external API, set VITE_API_URL environment variable
+// Use VITE_API_URL env var for external API (e.g., Render)
+// Fall back to relative URLs for same-domain deployment
 // @ts-ignore - VITE_* env vars are available in Vite
-const API_BASE_URL = import.meta.env?.VITE_API_URL || '';
+const API_BASE_URL = import.meta.env?.VITE_API_URL ?? '';
 
 export const API_ENDPOINTS = {
   // Auth
