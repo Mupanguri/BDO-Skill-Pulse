@@ -1,5 +1,10 @@
 import { Pool } from 'pg'
 import bcrypt from 'bcrypt'
+import { config } from 'dotenv'
+import path from 'path'
+
+// Load environment variables
+config()
 
 // Database connection configuration
 const pool = new Pool({
