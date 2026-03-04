@@ -3,17 +3,23 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 model User {
-  id            String         @id @default(uuid())
-  email         String         @unique
-  password      String
-  department    String
-  isAdmin       Boolean        @default(false)
-  createdAt     DateTime       @default(now()) @map("createdAt")
-  quizResponses QuizResponse[]
+  id                String         @id @default(uuid())
+  email             String         @unique
+  password          String
+  department        String
+  isAdmin           Boolean        @default(false)
+  createdAt         DateTime       @default(now()) @map("createdAt")
+  quizResponses     QuizResponse[]
+  
+  // Profile Management Fields
+  darkMode          Boolean        @default(false)
+  profileImage      String?        // URL to profile image
+  lastPasswordChange DateTime?     // Track password changes
+  displayName       String?        // Optional display name
 
   @@map("User")
 }
@@ -27,6 +33,7 @@ model QuizSession {
   createdBy String
   isActive  Boolean        @default(false)
   createdAt DateTime       @default(now())
+  updatedAt DateTime?      // Add updatedAt field for session updates
   responses QuizResponse[]
 
   @@map("QuizSession")

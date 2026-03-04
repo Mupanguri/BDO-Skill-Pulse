@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../lib/contexts/AuthContext'
 import QuizTimer from '../lib/components/QuizTimer'
 import Button from '../lib/components/Button'
+import { AlertCircle, Clock, Save } from 'lucide-react'
 
 interface Question {
   id: string
@@ -24,62 +25,108 @@ function QuizPage() {
   const [searchParams] = useSearchParams()
   const isRetake = searchParams.get('retake') === 'true'
   const navigate = useNavigate()
-  const { user } = useAuth()
+  const { user, accessToken, refreshAccessToken } = useAuth()
 
   const [session, setSession] = useState<QuizSession | null>(null)
   const [answers, setAnswers] = useState<Record<string, number>>({})
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
-  const [timeSpent, setTimeSpent] = useState(0)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
-  const [savedProgress, setSavedProgress] = useState<any>(null)
+  const [showWarning, setShowWarning] = useState(false)
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
+  const [sessionExpired, setSessionExpired] = useState(false)
 
   // Timer state
   const [quizStartTime] = useState(Date.now())
   const [timeRemaining, setTimeRemaining] = useState(300) // 5 minutes
+  const autoSaveInterval = useRef<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
-    if (sessionId && user) {
+    if (!sessionId) {
+      console.error('No sessionId provided')
+      navigate('/app/dashboard')
+      return
+    }
+    if (sessionId && user && accessToken) {
       loadQuiz()
       loadSavedProgress()
+      startAutoSave()
     }
-  }, [sessionId, user])
+
+    return () => {
+      if (autoSaveInterval.current) {
+        clearInterval(autoSaveInterval.current)
+      }
+    }
+  }, [sessionId, user, accessToken])
 
   const loadQuiz = async () => {
     try {
-      const response = await fetch(`http://localhost:3001/api/sessions/${sessionId}`)
+      const response = await fetch(`http://localhost:3001/api/sessions/${sessionId}`, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        }
+      })
       if (response.ok) {
         const sessionData = await response.json()
         setSession(sessionData)
+      } else if (response.status === 401) {
+        // Try to refresh token
+        const refreshed = await refreshAccessToken()
+        if (refreshed) {
+          // Retry with new token
+          const newResponse = await fetch(`http://localhost:3001/api/sessions/${sessionId}`, {
+            headers: {
+              'Authorization': `Bearer ${accessToken}`
+            }
+          })
+          if (newResponse.ok) {
+            const sessionData = await newResponse.json()
+            setSession(sessionData)
+          }
+        } else {
+          setSessionExpired(true)
+        }
       } else {
         alert('Failed to load quiz')
-        navigate('/dashboard')
+        navigate('/app/dashboard')
       }
     } catch (error) {
       console.error('Failed to load quiz:', error)
       alert('Failed to load quiz')
-      navigate('/dashboard')
+      navigate('/app/dashboard')
     } finally {
       setLoading(false)
     }
   }
 
   const loadSavedProgress = async () => {
-    if (!user || !sessionId) return
+    if (!user || !sessionId || !accessToken) return
 
     try {
-      const response = await fetch(`http://localhost:3001/api/quiz-progress/${user.email}/${sessionId}`)
+      const response = await fetch(`http://localhost:3001/api/quiz-progress/${user.email}/${sessionId}`, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        }
+      })
       if (response.ok) {
         const progress = await response.json()
-        if (progress) {
-          setSavedProgress(progress)
-          setAnswers(progress.answers || {})
+        if (progress && progress.answers) {
+          setAnswers(progress.answers)
           setTimeRemaining(progress.timeRemaining || 300)
+          setShowWarning(true)
         }
       }
     } catch (error) {
       console.error('Failed to load saved progress:', error)
     }
+  }
+
+  const startAutoSave = () => {
+    // Auto-save every 30 seconds
+    autoSaveInterval.current = setInterval(async () => {
+      await handleAutoSave(answers, timeRemaining)
+    }, 30000)
   }
 
   const handleAnswerSelect = (questionId: string, answerIndex: number) => {
@@ -90,13 +137,16 @@ function QuizPage() {
   }
 
   const handleAutoSave = async (currentAnswers: any, remainingTime: number) => {
-    if (!user || !sessionId) return
+    if (!user || !sessionId || !accessToken) return
+
+    setAutoSaveStatus('saving')
 
     try {
-      await fetch('http://localhost:3001/api/quiz-progress', {
+      const response = await fetch('http://localhost:3001/api/quiz-progress', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
         },
         body: JSON.stringify({
           userEmail: user.email,
@@ -105,6 +155,34 @@ function QuizPage() {
           timeRemaining: remainingTime
         })
       })
+
+      if (response.ok) {
+        setAutoSaveStatus('saved')
+        setTimeout(() => setAutoSaveStatus('idle'), 1000)
+      } else if (response.status === 401) {
+        // Try to refresh token and retry
+        const refreshed = await refreshAccessToken()
+        if (refreshed) {
+          // Retry with new token
+          const newResponse = await fetch('http://localhost:3001/api/quiz-progress', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${accessToken}`
+            },
+            body: JSON.stringify({
+              userEmail: user.email,
+              sessionId: sessionId,
+              answers: currentAnswers,
+              timeRemaining: remainingTime
+            })
+          })
+          if (newResponse.ok) {
+            setAutoSaveStatus('saved')
+            setTimeout(() => setAutoSaveStatus('idle'), 1000)
+          }
+        }
+      }
     } catch (error) {
       console.error('Auto-save failed:', error)
     }
@@ -128,7 +206,7 @@ function QuizPage() {
   }
 
   const submitQuiz = async (timeUp = false) => {
-    if (!session || !user) return
+    if (!session || !user || !accessToken) return
 
     setSubmitting(true)
 
@@ -140,6 +218,7 @@ function QuizPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
         },
         body: JSON.stringify({
           userEmail: user.email,
@@ -156,12 +235,53 @@ function QuizPage() {
         // Mark retake as completed if this was a retake
         if (isRetake) {
           await fetch(`http://localhost:3001/api/user/${user.email}/session/${sessionId}/complete-retake`, {
-            method: 'POST'
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${accessToken}`
+            }
           })
         }
 
         // Navigate to results
-        navigate(`/results/${sessionId}`)
+        navigate(`/app/admin/results?session=${sessionId}`)
+      } else if (response.status === 401) {
+        // Try to refresh token and retry
+        const refreshed = await refreshAccessToken()
+        if (refreshed) {
+          // Retry with new token
+          const newResponse = await fetch('http://localhost:3001/api/responses', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${accessToken}`
+            },
+            body: JSON.stringify({
+              userEmail: user.email,
+              sessionId: sessionId,
+              answers: answers,
+              score: score,
+              timeSpent: totalTimeSpent,
+              completedAt: new Date().toISOString(),
+              timeUp: timeUp
+            })
+          })
+          if (newResponse.ok) {
+            // Mark retake as completed if this was a retake
+            if (isRetake) {
+              await fetch(`http://localhost:3001/api/user/${user.email}/session/${sessionId}/complete-retake`, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${accessToken}`
+                }
+              })
+            }
+
+            // Navigate to results
+            navigate(`/app/admin/results?session=${sessionId}`)
+          }
+        } else {
+          setSessionExpired(true)
+        }
       } else {
         alert('Failed to submit quiz')
       }
@@ -189,6 +309,21 @@ function QuizPage() {
     return session && Object.keys(answers).length === session.questions.length
   }
 
+  if (sessionExpired) {
+    return (
+      <div className="text-center py-12">
+        <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+        <h2 className="text-2xl font-bold text-gray-900 mb-2">Session Expired</h2>
+        <p className="text-gray-600 mb-6">
+          Your session has expired. Please log in again to continue.
+        </p>
+        <Button onClick={() => navigate('/login')}>
+          Go to Login
+        </Button>
+      </div>
+    )
+  }
+
   if (loading) {
     return (
       <div className="text-center py-12">
@@ -202,7 +337,7 @@ function QuizPage() {
     return (
       <div className="text-center py-12">
         <p className="text-red-600">Quiz not found</p>
-        <Button onClick={() => navigate('/dashboard')} className="mt-4">
+        <Button onClick={() => navigate('/app/dashboard')} className="mt-4">
           Back to Dashboard
         </Button>
       </div>
@@ -214,6 +349,24 @@ function QuizPage() {
 
   return (
     <div className="max-w-4xl mx-auto">
+      {/* Warning Banner for Restored Progress */}
+      {showWarning && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+          <div className="flex items-center gap-3">
+            <AlertCircle className="h-5 w-5 text-yellow-600" />
+            <div className="flex-1">
+              <p className="font-medium text-yellow-800">Progress Restored</p>
+              <p className="text-sm text-yellow-700">
+                Your quiz progress was restored from a previous session. You can continue from where you left off.
+              </p>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => setShowWarning(false)}>
+              Dismiss
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Header with Timer */}
       <div className="bg-white rounded-lg shadow-md p-6 mb-6">
         <div className="flex items-center justify-between mb-4">
@@ -224,13 +377,22 @@ function QuizPage() {
             </p>
           </div>
 
-          <QuizTimer
-            duration={timeRemaining}
-            onTimeUp={handleTimeUp}
-            onAutoSave={handleAutoSave}
-            sessionId={sessionId}
-            userEmail={user?.email}
-          />
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <Clock className="h-4 w-4" />
+              <span>Auto-save: {autoSaveStatus === 'saving' ? 'Saving...' : autoSaveStatus === 'saved' ? 'Saved' : 'Ready'}</span>
+              {autoSaveStatus === 'saving' && <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-red-500"></div>}
+              {autoSaveStatus === 'saved' && <Save className="h-3 w-3 text-green-500" />}
+            </div>
+
+            <QuizTimer
+              duration={timeRemaining}
+              onTimeUp={handleTimeUp}
+              onAutoSave={handleAutoSave}
+              sessionId={sessionId}
+              userEmail={user?.email}
+            />
+          </div>
         </div>
 
         {/* Progress Bar */}
@@ -323,6 +485,7 @@ function QuizPage() {
           <li>• Your progress is automatically saved every 30 seconds</li>
           <li>• Answer all questions to submit</li>
           <li>• You can navigate between questions using the dots or buttons</li>
+          <li>• If you leave the page, your progress will be saved</li>
           {isRetake && <li>• This is a retake attempt</li>}
         </ul>
       </div>

@@ -1,9 +1,10 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect, useCallback } from 'react'
+import frontendLogger from '../utils/frontend-logger.js'
 
 // User interface
 export interface User {
   email: string;
-  department: 'Tax' | 'IT' | 'Audit';
+  department: 'Tax' | 'IT' | 'Audit' | 'Consulting';
   isAdmin: boolean;
 }
 
@@ -12,29 +13,19 @@ interface AuthContextType {
   accessToken: string | null;
   refreshToken: string | null;
   isDarkMode: boolean;
+  isRememberMe: boolean;
+  isLoading: boolean;
   toggleDarkMode: () => void;
-  login: (email: string, department: string, isAdmin: boolean, accessToken: string, refreshToken: string) => void;
-  logout: () => void;
+  toggleRememberMe: () => void;
+  login: (email: string, password: string, rememberMe?: boolean) => Promise<{ success: boolean; error?: string }>;
+  logout: () => Promise<void>;
   logoutAll: () => Promise<void>;
   refreshAccessToken: () => Promise<boolean>;
   checkSessionStatus: () => Promise<boolean>;
+  register: (email: string, password: string, department: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-// Temporary test users for development/testing
-const testUsers = {
-  admin: {
-    email: 'admin.test@bdo.co.zw',
-    department: 'IT' as const,
-    isAdmin: true
-  },
-  user: {
-    email: 'john.doe@bdo.co.zw',
-    department: 'Tax' as const,
-    isAdmin: false
-  }
-};
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(() => {
@@ -51,6 +42,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const saved = localStorage.getItem('darkMode');
     return saved ? JSON.parse(saved) : false;
   });
+  const [isRememberMe, setIsRememberMe] = useState(() => {
+    const saved = localStorage.getItem('rememberMe');
+    return saved ? JSON.parse(saved) : false;
+  });
+  const [isLoading, setIsLoading] = useState(false);
 
   // Define functions first before they're used in useEffect
   const refreshAccessToken = useCallback(async (): Promise<boolean> => {
@@ -81,64 +77,173 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [refreshToken]);
 
   const logout = useCallback(async () => {
-    if (accessToken) {
-      try {
-        await fetch('http://localhost:3001/api/logout', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/json'
-          }
-        });
-      } catch (error) {
-        console.error('Logout API call failed:', error);
+    setIsLoading(true);
+    try {
+      if (accessToken) {
+        try {
+          await fetch('http://localhost:3001/api/logout', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json'
+            }
+          });
+        } catch (error) {
+          console.error('Logout API call failed:', error);
+        }
       }
-    }
 
-    setUser(null);
-    setAccessToken(null);
-    setRefreshToken(null);
-    localStorage.removeItem('user');
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
+      setUser(null);
+      setAccessToken(null);
+      setRefreshToken(null);
+      localStorage.removeItem('user');
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
+      localStorage.removeItem('rememberMe');
+    } finally {
+      setIsLoading(false);
+    }
   }, [accessToken]);
 
   const logoutAll = useCallback(async () => {
-    if (accessToken) {
-      try {
-        await fetch('http://localhost:3001/api/logout-all', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/json'
-          }
-        });
-      } catch (error) {
-        console.error('Logout all API call failed:', error);
+    setIsLoading(true);
+    try {
+      if (accessToken) {
+        try {
+          await fetch('http://localhost:3001/api/logout-all', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json'
+            }
+          });
+        } catch (error) {
+          console.error('Logout all API call failed:', error);
+        }
       }
-    }
 
-    setUser(null);
-    setAccessToken(null);
-    setRefreshToken(null);
-    localStorage.removeItem('user');
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
+      setUser(null);
+      setAccessToken(null);
+      setRefreshToken(null);
+      localStorage.removeItem('user');
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
+      localStorage.removeItem('rememberMe');
+    } finally {
+      setIsLoading(false);
+    }
   }, [accessToken]);
 
   const toggleDarkMode = () => {
     setIsDarkMode((prev: boolean) => !prev);
   };
 
-  const login = useCallback((email: string, department: string, isAdmin: boolean, newAccessToken: string, newRefreshToken: string) => {
-    const userData = {
-      email,
-      department: department as 'Tax' | 'IT' | 'Audit',
-      isAdmin
-    };
-    setUser(userData);
-    setAccessToken(newAccessToken);
-    setRefreshToken(newRefreshToken);
+  const toggleRememberMe = () => {
+    setIsRememberMe((prev: boolean) => !prev);
+  };
+
+  const login = useCallback(async (email: string, password: string, rememberMe: boolean = false): Promise<{ success: boolean; error?: string }> => {
+    setIsLoading(true);
+    const startTime = performance.now();
+    frontendLogger.formSubmission('login', { email, password: '[REDACTED]', rememberMe }, false);
+    
+    try {
+      const response = await fetch('http://localhost:3001/api/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ email, password, rememberMe })
+      });
+
+      const duration = performance.now() - startTime;
+      
+      if (response.ok) {
+        const data = await response.json();
+        const userData = {
+          email: data.email,
+          department: data.department as 'Tax' | 'IT' | 'Audit' | 'Consulting',
+          isAdmin: data.isAdmin
+        };
+        setUser(userData);
+        setAccessToken(data.accessToken);
+        setRefreshToken(data.refreshToken);
+        setIsRememberMe(rememberMe);
+        
+        frontendLogger.userAction('login_success', 'AuthContext', { 
+          email, 
+          isAdmin: data.isAdmin, 
+          duration: Math.round(duration) 
+        });
+        
+        return { success: true };
+      } else {
+        const errorData = await response.json();
+        frontendLogger.userAction('login_failed', 'AuthContext', { 
+          email, 
+          error: errorData.error, 
+          duration: Math.round(duration) 
+        });
+        return { success: false, error: errorData.error || 'Login failed' };
+      }
+    } catch (error) {
+      const duration = performance.now() - startTime;
+      frontendLogger.error(error, { context: 'login', email });
+      frontendLogger.userAction('login_error', 'AuthContext', { 
+        email, 
+        duration: Math.round(duration) 
+      });
+      return { success: false, error: 'Network error during login' };
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const register = useCallback(async (email: string, password: string, department: string): Promise<{ success: boolean; error?: string }> => {
+    setIsLoading(true);
+    const startTime = performance.now();
+    frontendLogger.formSubmission('register', { email, password: '[REDACTED]', department }, false);
+    
+    try {
+      const response = await fetch('http://localhost:3001/api/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ email, password, department })
+      });
+
+      const duration = performance.now() - startTime;
+      
+      if (response.ok) {
+        frontendLogger.userAction('register_success', 'AuthContext', { 
+          email, 
+          department, 
+          duration: Math.round(duration) 
+        });
+        return { success: true };
+      } else {
+        const errorData = await response.json();
+        frontendLogger.userAction('register_failed', 'AuthContext', { 
+          email, 
+          department, 
+          error: errorData.error, 
+          duration: Math.round(duration) 
+        });
+        return { success: false, error: errorData.error || 'Registration failed' };
+      }
+    } catch (error) {
+      const duration = performance.now() - startTime;
+      frontendLogger.error(error, { context: 'register', email, department });
+      frontendLogger.userAction('register_error', 'AuthContext', { 
+        email, 
+        department, 
+        duration: Math.round(duration) 
+      });
+      return { success: false, error: 'Network error during registration' };
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
   const checkSessionStatus = useCallback(async (): Promise<boolean> => {
@@ -167,12 +272,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [accessToken, refreshAccessToken]);
 
-  // Auto-refresh token before expiration
+  // Enhanced auto-refresh token with persistent sessions
   useEffect(() => {
     if (accessToken && refreshToken) {
-      // Calculate time until token expires (15 minutes = 900000ms)
-      // Refresh 2 minutes before expiration to be safe
-      const refreshTime = 13 * 60 * 1000; // 13 minutes
+      // For persistent sessions (Remember Me), refresh every 23 hours
+      // For regular sessions, refresh every 10 minutes
+      const refreshTime = isRememberMe ? 23 * 60 * 60 * 1000 : 10 * 60 * 1000;
 
       const refreshInterval = setInterval(async () => {
         try {
@@ -191,11 +296,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       return () => clearInterval(refreshInterval);
     }
-  }, [accessToken, refreshToken, refreshAccessToken, logout]);
+  }, [accessToken, refreshToken, refreshAccessToken, logout, isRememberMe]);
 
-  // Check session status periodically
+  // Enhanced session status check with persistent sessions
   useEffect(() => {
     if (user && accessToken) {
+      // For persistent sessions, check every 30 minutes
+      // For regular sessions, check every 5 minutes
+      const checkInterval = isRememberMe ? 30 * 60 * 1000 : 5 * 60 * 1000;
+
       const statusCheckInterval = setInterval(async () => {
         try {
           const isValid = await checkSessionStatus();
@@ -205,12 +314,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         } catch (error) {
           console.error('Session status check failed:', error);
         }
-      }, 5 * 60 * 1000); // Check every 5 minutes
+      }, checkInterval);
 
       return () => clearInterval(statusCheckInterval);
     }
-  }, [user, accessToken, checkSessionStatus, logout]);
+  }, [user, accessToken, checkSessionStatus, logout, isRememberMe]);
 
+  // Initialize dark mode
   useEffect(() => {
     localStorage.setItem('darkMode', JSON.stringify(isDarkMode));
     if (isDarkMode) {
@@ -220,6 +330,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [isDarkMode]);
 
+  // Initialize user data
   useEffect(() => {
     if (user) {
       localStorage.setItem('user', JSON.stringify(user));
@@ -228,6 +339,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [user]);
 
+  // Initialize access token
   useEffect(() => {
     if (accessToken) {
       localStorage.setItem('accessToken', accessToken);
@@ -236,6 +348,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [accessToken]);
 
+  // Initialize refresh token
   useEffect(() => {
     if (refreshToken) {
       localStorage.setItem('refreshToken', refreshToken);
@@ -244,17 +357,44 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [refreshToken]);
 
+  // Initialize remember me setting
+  useEffect(() => {
+    localStorage.setItem('rememberMe', JSON.stringify(isRememberMe));
+  }, [isRememberMe]);
+
+  // Auto-login on app start if remember me is enabled
+  useEffect(() => {
+    const autoLogin = async () => {
+      if (!user && isRememberMe && refreshToken) {
+        const success = await refreshAccessToken();
+        if (success && accessToken) {
+          // Get user info from session status
+          const isValid = await checkSessionStatus();
+          if (!isValid) {
+            logout();
+          }
+        }
+      }
+    };
+
+    autoLogin();
+  }, []); // Only run on mount
+
   const value = {
     user,
     accessToken,
     refreshToken,
     isDarkMode,
+    isRememberMe,
+    isLoading,
     toggleDarkMode,
+    toggleRememberMe,
     login,
     logout,
     logoutAll,
     refreshAccessToken,
-    checkSessionStatus
+    checkSessionStatus,
+    register
   };
 
   return (

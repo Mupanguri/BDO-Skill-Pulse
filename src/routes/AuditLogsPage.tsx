@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../lib/contexts/AuthContext'
 import { useNavigate } from 'react-router-dom'
 import Button from '../lib/components/Button'
-import { Download, Eye, AlertTriangle, Shield, Clock } from 'lucide-react'
+import { Download, Eye, AlertTriangle, Shield, Clock, AlertCircle } from 'lucide-react'
 
 interface AuditLog {
   id: string
@@ -15,7 +15,7 @@ interface AuditLog {
 }
 
 function AuditLogsPage() {
-  const { user } = useAuth()
+  const { user, accessToken, refreshAccessToken } = useAuth()
   const navigate = useNavigate()
   const [logs, setLogs] = useState<AuditLog[]>([])
   const [loading, setLoading] = useState(true)
@@ -26,13 +26,14 @@ function AuditLogsPage() {
   const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null)
   const [dateFilter, setDateFilter] = useState('')
   const [actionFilter, setActionFilter] = useState('')
+  const [sessionExpired, setSessionExpired] = useState(false)
 
   // Super password - hardcoded for now, in production use environment variable
   const SUPER_PASSWORD = 'BDO_AUDIT_2024_SECURE'
 
   useEffect(() => {
     if (!user?.isAdmin) {
-      navigate('/dashboard')
+      navigate('/app/dashboard')
       return
     }
   }, [user, navigate])
@@ -49,17 +50,36 @@ function AuditLogsPage() {
   }
 
   const fetchAuditLogs = async () => {
+    if (!accessToken) return
+
     try {
       setLoading(true)
       const response = await fetch('http://localhost:3001/api/audit/logs', {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
+          'Authorization': `Bearer ${accessToken}`
         }
       })
 
       if (response.ok) {
         const data = await response.json()
         setLogs(data.logs)
+      } else if (response.status === 401) {
+        // Try to refresh token and retry
+        const refreshed = await refreshAccessToken()
+        if (refreshed) {
+          // Retry with new token
+          const newResponse = await fetch('http://localhost:3001/api/audit/logs', {
+            headers: {
+              'Authorization': `Bearer ${accessToken}`
+            }
+          })
+          if (newResponse.ok) {
+            const data = await newResponse.json()
+            setLogs(data.logs)
+          }
+        } else {
+          setSessionExpired(true)
+        }
       } else {
         setError('Failed to fetch audit logs')
       }
@@ -194,6 +214,21 @@ function AuditLogsPage() {
             </button>
           </div>
         </div>
+      </div>
+    )
+  }
+
+  if (sessionExpired) {
+    return (
+      <div className="text-center py-12">
+        <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+        <h2 className="text-2xl font-bold text-gray-900 mb-2">Session Expired</h2>
+        <p className="text-gray-600 mb-6">
+          Your session has expired. Please log in again to continue.
+        </p>
+        <Button onClick={() => navigate('/login')}>
+          Go to Login
+        </Button>
       </div>
     )
   }

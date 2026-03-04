@@ -18,7 +18,7 @@ function ProtectedRoute({ children, requireAuth = true, requireAdmin = false }: 
 
   if (requireAdmin && (!user || !user.isAdmin)) {
     // Redirect to dashboard if user is logged in but not admin
-    return <Navigate to="/dashboard" replace />
+    return <Navigate to="/app/dashboard" replace />
   }
 
   return <>{children}</>

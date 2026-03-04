@@ -155,7 +155,7 @@ function SessionPage() {
     return (
       <div className="text-center py-12">
         <div className="text-red-600 mb-4">{error}</div>
-        <Button onClick={() => navigate('/dashboard')}>Back to Dashboard</Button>
+        <Button onClick={() => navigate('/app/dashboard')}>Back to Dashboard</Button>
       </div>
     )
   }
@@ -164,7 +164,7 @@ function SessionPage() {
     return (
       <div className="text-center py-12">
         <div className="text-red-600 mb-4">Quiz session not found</div>
-        <Button onClick={() => navigate('/dashboard')}>Back to Dashboard</Button>
+        <Button onClick={() => navigate('/app/dashboard')}>Back to Dashboard</Button>
       </div>
     )
   }
@@ -198,10 +198,10 @@ function SessionPage() {
           </div>
 
           <div className="flex gap-4 justify-center">
-            <Button onClick={() => navigate('/dashboard')}>
+            <Button onClick={() => navigate('/app/dashboard')}>
               Back to Dashboard
             </Button>
-            <Button variant="outline" onClick={() => navigate('/history')}>
+            <Button variant="outline" onClick={() => navigate('/app/history')}>
               View History
             </Button>
           </div>
@@ -244,11 +244,10 @@ function SessionPage() {
           {currentQuestion.options.map((option, index) => (
             <label
               key={index}
-              className={`flex items-center p-4 rounded-lg border-2 cursor-pointer transition-all ${
-                quizState.answers[currentQuestion.id] === index
-                  ? 'border-red-500 bg-white shadow-md'
-                  : 'border-gray-300 bg-white hover:border-gray-400'
-              }`}
+              className={`flex items-center p-4 rounded-lg border-2 cursor-pointer transition-all ${quizState.answers[currentQuestion.id] === index
+                ? 'border-red-500 bg-white shadow-md'
+                : 'border-gray-300 bg-white hover:border-gray-400'
+                }`}
             >
               <input
                 type="radio"

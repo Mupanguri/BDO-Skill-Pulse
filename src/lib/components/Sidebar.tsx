@@ -14,7 +14,6 @@ import {
   X,
   Menu
 } from 'lucide-react'
-import Button from './Button'
 
 interface SidebarProps {
   mobileMenuOpen?: boolean
@@ -31,13 +30,13 @@ function Sidebar({ mobileMenuOpen = false, setMobileMenuOpen, onNavigate }: Side
   const [unreadCount, setUnreadCount] = useState(0)
 
   const navigationItems = user?.isAdmin ? [
-    { path: '/admin', label: 'Dashboard', icon: Eye },
-    { path: '/admin/participants', label: 'Participants', icon: User },
-    { path: '/admin/results', label: 'View Results', icon: BarChart3 },
-    { path: '/admin/create', label: 'Create Session', icon: Plus },
+    { path: '/app/admin', label: 'Dashboard', icon: Eye },
+    { path: '/app/admin/participants', label: 'Participants', icon: User },
+    { path: '/app/admin/results', label: 'View Results', icon: BarChart3 },
+    { path: '/app/admin/create', label: 'Create Session', icon: Plus },
   ] : [
-    { path: '/dashboard', label: 'Active Quiz', icon: FileText },
-    { path: '/history', label: 'My History', icon: BarChart3 },
+    { path: '/app/dashboard', label: 'Active Quiz', icon: FileText },
+    { path: '/app/history', label: 'My History', icon: BarChart3 },
   ]
 
   const handleNavigation = (path: string) => {
@@ -124,129 +123,152 @@ function Sidebar({ mobileMenuOpen = false, setMobileMenuOpen, onNavigate }: Side
 
       {/* Sidebar - overlay on mobile, fixed on desktop */}
       <aside
-        className={`fixed left-0 top-16 lg:top-0 h-[calc(100%-4rem)] lg:h-full w-72 lg:w-64 bg-white/95 dark:bg-gray-900/95 backdrop-blur border-r border-gray-200 dark:border-gray-700 shadow-xl transition-transform duration-300 ease-in-out z-50 ${
-          mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
-        } lg:translate-x-0`}
+        className={`fixed left-0 top-16 lg:top-0 h-[calc(100%-4rem)] lg:h-full w-72 lg:w-64 bg-white/95 dark:bg-gray-900/95 backdrop-blur border-r border-gray-200 dark:border-gray-700 shadow-xl transition-transform duration-300 ease-in-out z-50 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+          } lg:translate-x-0`}
         aria-label="Sidebar navigation"
       >
         <div className="flex flex-col h-full">
-        {/* Logo Section - Desktop only */}
-        <div className="hidden lg:flex items-center justify-between h-16 px-4 border-b border-gray-200 dark:border-gray-700">
-          <img
-            src="/bdo_logo.png"
-            alt="BDO Logo"
-            className="h-12 w-auto object-contain"
-          />
-        </div>
-
-        {/* Admin Badge */}
-        {user?.isAdmin && (
-          <div className="px-4 pt-4">
-            <div className="bg-bdo-red/10 border border-bdo-red/20 rounded-lg px-3 py-2">
-              <span className="text-xs font-semibold text-bdo-red">ADMIN MODE</span>
-            </div>
+          {/* Logo Section - Desktop only */}
+          <div className="hidden lg:flex items-center justify-between h-16 px-4 border-b border-gray-200 dark:border-gray-700">
+            <img
+              src="/bdo_logo.png"
+              alt="BDO Logo"
+              className="h-12 w-auto object-contain"
+            />
           </div>
-        )}
 
-        {/* Navigation Links */}
-        <div className="flex-1 px-4 py-6 space-y-2.5" role="navigation" aria-label="Main navigation">
-          {navigationItems.map((item) => {
-            const Icon = item.icon
-            const isActive = location.pathname === item.path
+          {/* Admin Badge */}
+          {user?.isAdmin && (
+            <div className="px-4 pt-4">
+              <div className="bg-bdo-red/10 border border-bdo-red/20 rounded-lg px-3 py-2">
+                <span className="text-xs font-semibold text-bdo-red">ADMIN MODE</span>
+              </div>
+            </div>
+          )}
 
-            return (
-              <button
-                key={item.path}
-                onClick={() => handleNavigation(item.path)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    handleNavigation(item.path)
-                  }
-                }}
-                className={`w-full flex items-center px-4 py-3.5 text-left rounded-xl transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 ${
-                  isActive
+          {/* Navigation Links */}
+          <div className="flex-1 px-4 py-6 space-y-2.5" role="navigation" aria-label="Main navigation">
+            {navigationItems.map((item) => {
+              const Icon = item.icon
+              const isActive = location.pathname === item.path
+
+              return (
+                <button
+                  key={item.path}
+                  onClick={() => handleNavigation(item.path)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      handleNavigation(item.path)
+                    }
+                  }}
+                  className={`w-full flex items-center px-4 py-3.5 text-left rounded-xl transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 ${isActive
                     ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-700'
                     : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-red-600 dark:hover:text-red-400 border border-transparent'
-                }`}
-                aria-current={isActive ? 'page' : undefined}
-                aria-label={`${item.label} ${isActive ? '(current page)' : ''}`}
-              >
-                <Icon className="h-5 w-5 mr-3" aria-hidden="true" />
-                <span className="font-medium">{item.label}</span>
-              </button>
-            )
-          })}
-        </div>
-
-        {/* User Info Section */}
-        {user && (
-          <div className="px-4 py-4 border-t border-gray-200 dark:border-gray-700 bg-gradient-to-b from-gray-50 to-white dark:from-gray-800 dark:to-gray-900">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="h-10 w-10 rounded-full bg-bdo-navy flex items-center justify-center flex-shrink-0">
-                <span className="text-white font-semibold text-sm">
-                  {user.email.charAt(0).toUpperCase()}
-                </span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{user.email}</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">{user.department}</p>
-              </div>
-              {/* Notification Bell */}
-              <button
-                onClick={toggleNotifications}
-                className="relative p-1.5 text-gray-600 dark:text-gray-300 hover:text-bdo-red dark:hover:text-bdo-red transition-colors flex-shrink-0"
-                aria-label={`Notifications ${unreadCount > 0 ? `(${unreadCount} unread)` : ''}`}
-              >
-                <Bell className="h-5 w-5" />
-                {unreadCount > 0 && (
-                  <>
-                    <span className="absolute -top-1 -right-1 bg-bdo-red text-white text-xs rounded-full h-5 w-5 flex items-center justify-center font-semibold">
-                      {unreadCount > 99 ? '99+' : unreadCount}
-                    </span>
-                    <span className="sr-only">{unreadCount} unread notifications</span>
-                  </>
-                )}
-              </button>
-            </div>
-
-            <div className="space-y-2">
-              {/* Dark Mode Toggle */}
-              <button
-                onClick={toggleDarkMode}
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
-                aria-label={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
-              >
-                {isDarkMode ? (
-                  <Sun className="h-4 w-4" aria-hidden="true" />
-                ) : (
-                  <Moon className="h-4 w-4" aria-hidden="true" />
-                )}
-                <span>{isDarkMode ? 'Light Mode' : 'Dark Mode'}</span>
-              </button>
-
-              {/* Logout Button */}
-              <button
-                onClick={logout}
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-bdo-red dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors font-medium"
-                aria-label="Logout"
-              >
-                <LogOut className="h-4 w-4" aria-hidden="true" />
-                <span>Logout</span>
-              </button>
-
-              {/* Logout All Button */}
-              <button
-                onClick={logoutAll}
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg transition-colors"
-                aria-label="Logout from all devices"
-              >
-                <LogOut className="h-4 w-4" aria-hidden="true" />
-                <span>Logout All Devices</span>
-              </button>
-            </div>
+                    }`}
+                  aria-current={isActive ? 'page' : undefined}
+                  aria-label={`${item.label} ${isActive ? '(current page)' : ''}`}
+                >
+                  <Icon className="h-5 w-5 mr-3" aria-hidden="true" />
+                  <span className="font-medium">{item.label}</span>
+                </button>
+              )
+            })}
+            
+            {/* Profile Link */}
+            <button
+              onClick={() => handleNavigation('/app/profile')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  handleNavigation('/app/profile')
+                }
+              }}
+              className={`w-full flex items-center px-4 py-3.5 text-left rounded-xl transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 ${
+                location.pathname === '/app/profile'
+                  ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-700'
+                  : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-red-600 dark:hover:text-red-400 border border-transparent'
+              }`}
+              aria-current={location.pathname === '/app/profile' ? 'page' : undefined}
+              aria-label={`Profile ${location.pathname === '/app/profile' ? '(current page)' : ''}`}
+            >
+              <User className="h-5 w-5 mr-3" aria-hidden="true" />
+              <span className="font-medium">Profile</span>
+            </button>
           </div>
-        )}
+
+          {/* User Info Section */}
+          {user && (
+            <div className="px-4 py-4 border-t border-gray-200 dark:border-gray-700 bg-gradient-to-b from-gray-50 to-white dark:from-gray-800 dark:to-gray-900">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="h-10 w-10 rounded-full bg-bdo-navy flex items-center justify-center flex-shrink-0">
+                  <span className="text-white font-semibold text-sm">
+                    {user.email.charAt(0).toUpperCase()}
+                  </span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{user.email}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{user.department}</p>
+                </div>
+                {/* Notification Bell */}
+                <button
+                  onClick={toggleNotifications}
+                  className="relative p-1.5 text-gray-600 dark:text-gray-300 hover:text-bdo-red dark:hover:text-bdo-red transition-colors flex-shrink-0"
+                  aria-label={`Notifications ${unreadCount > 0 ? `(${unreadCount} unread)` : ''}`}
+                >
+                  <Bell className="h-5 w-5" />
+                  {unreadCount > 0 && (
+                    <>
+                      <span className="absolute -top-1 -right-1 bg-bdo-red text-white text-xs rounded-full h-5 w-5 flex items-center justify-center font-semibold">
+                        {unreadCount > 99 ? '99+' : unreadCount}
+                      </span>
+                      <span className="sr-only">{unreadCount} unread notifications</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                {/* Dark Mode Toggle - Admins Only */}
+                {user?.isAdmin && (
+                  <button
+                    onClick={toggleDarkMode}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                    aria-label={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
+                  >
+                    {isDarkMode ? (
+                      <Sun className="h-4 w-4" aria-hidden="true" />
+                    ) : (
+                      <Moon className="h-4 w-4" aria-hidden="true" />
+                    )}
+                    <span>{isDarkMode ? 'Light Mode' : 'Dark Mode'}</span>
+                  </button>
+                )}
+
+                {/* Logout Button */}
+                <button
+                  onClick={logout}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-bdo-red dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors font-medium"
+                  aria-label="Logout"
+                >
+                  <LogOut className="h-4 w-4" aria-hidden="true" />
+                  <span>Logout</span>
+                </button>
+
+                {/* Logout All Button - Only for admins */}
+                {user?.isAdmin && (
+                  <button
+                    onClick={logoutAll}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg transition-colors"
+                    aria-label="Logout from all devices"
+                  >
+                    <LogOut className="h-4 w-4" aria-hidden="true" />
+                    <span>Logout All Devices</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
 
         </div>
       </aside>
@@ -274,9 +296,8 @@ function Sidebar({ mobileMenuOpen = false, setMobileMenuOpen, onNavigate }: Side
               notifications.map((notification: any) => (
                 <div
                   key={notification.id}
-                  className={`p-4 border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors ${
-                    !notification.read ? 'bg-blue-50 dark:bg-blue-900/20' : ''
-                  }`}
+                  className={`p-4 border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors ${!notification.read ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                    }`}
                   onClick={() => markNotificationAsRead(notification.id)}
                 >
                   <div className="flex items-start justify-between gap-3">

@@ -19,6 +19,7 @@
     "preview": "vite preview",
     "check": "tsc --noEmit",
     "server": "node --no-deprecation server.js",
+    "init-db": "node init_database.js",
     "dev:full": "concurrently \"npm run server\" \"npm run dev\""
   },
   "dependencies": {
@@ -33,6 +34,7 @@
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.2",
     "lucide-react": "^0.468.0",
+    "pg": "^8.18.0",
     "prisma": "^7.2.0",
     "react": "^18.3.1",
     "react-chartjs-2": "^5.2.0",

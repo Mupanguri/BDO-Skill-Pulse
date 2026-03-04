@@ -1,0 +1,173 @@
+BDO Quiz System - Feature Implementation Plan
+================================================
+
+This document outlines all the features to be implemented based on user requirements.
+
+---
+
+1. RETAKE FEATURE
+-----------------
+Description: Quiz retake system with cooldown and time limits
+
+Requirements:
+- After scoring <45%, user sees "Retake Quiz" button
+- Maximum 2 retakes allowed per user per session
+- If retake score >=45%, that score is used for metrics
+- If retake fails (<45%), another retake button appears with:
+  * 30-minute cooldown BEFORE the retake becomes available
+  * After 30 minutes, 2-hour countdown starts for retake window
+  * After 2 hours, retake button disappears permanently for that attempt
+  
+- Each retake window is 2 hours only
+- After 2-hour window expires, retake button disappears
+- Final score used = first passing score OR last attempt score
+
+Database Changes Needed:
+- Update userRetake table to track:
+  * retakeCount (0, 1, or 2)
+  * lastRetakeAttempt (timestamp)
+  * retakeWindowStart (timestamp)
+  * retakeWindowEnd (timestamp)
+  * cooldownEnd (timestamp)
+  * passed (boolean)
+  * finalScore (number)
+
+---
+
+2. PASSWORD CHANGE TRACKING
+---------------------------
+Description: Track when users change their passwords
+
+Requirements:
+- When user changes password, update lastPasswordChange timestamp
+- Display on profile page: "Last Password Change: [date/time]"
+- Update User table if needed
+
+Database Changes:
+- lastPasswordChange field exists in User table - ensure it's updated on password change
+
+---
+
+3. SESSION CREATED BY FIELD
+---------------------------
+Description: Track which admin created each quiz session
+
+Requirements:
+- When admin creates a session, store their email as "createdBy"
+- Display "Created by: [name]" on session cards
+- Include department of creator
+- Show number of participants who completed from targeted group
+
+Database Changes:
+- Add "createdBy" field to QuizSession table (email of creator)
+- Add "creatorDepartment" field (optional, can derive from user)
+
+---
+
+4. QUESTION ANSWER REASONS
+--------------------------
+Description: Allow admins to add explanations for correct answers
+
+Requirements:
+- In session creation, under each question add a small text area:
+  "Reason for correct answer"
+- Format displayed to users:
+  D - (answer highlighted) [Reason why D is correct]
+- Users can see this when reviewing their answers after quiz completion
+
+Database Changes:
+- Add "correctAnswerReason" field to Question table
+- Store the explanation text
+
+---
+
+5. REVIEW BUTTON AFTER QUIZ
+---------------------------
+Description: Show review button after quiz is finalized
+
+Requirements:
+- After quiz is completed and score is finalized:
+  * Show "Review Answers" button
+  * User sees each question with:
+    - Their answer
+    - Correct answer highlighted
+    - Reason why answer is correct
+- Only available AFTER quiz is finalized (not during retake period)
+
+Frontend Changes:
+- Add ReviewButton component
+- Show on results page when quiz is finalized
+
+---
+
+6. SESSION CARD DISPLAY FIX
+---------------------------
+Description: Fix card display to show accurate information
+
+Requirements:
+- Show correct date format: 2026/03/03
+- Show time: 14:09
+- Show number of questions: 3 questions
+- Show participants who ANSWERED (not just registered):
+  * "3 participants" = 3 people submitted
+- Show completion stats accurately
+
+Frontend Changes:
+- Update SessionCard component to show correct data
+
+---
+
+7. SESSION DEACTIVATION BEHAVIOR
+--------------------------------
+Description: Handle deactivated sessions properly
+
+Requirements:
+- When admin deactivates a session:
+  * Session disappears from "Active Quizzes" list
+  * Session remains in "Completed Quizzes" history
+  * Review button becomes available for completed sessions
+  * No new retakes allowed on deactivated sessions
+  * All historical data preserved
+
+Database Changes:
+- Add "deactivated" boolean field to QuizSession (or use isActive differently)
+- Preserve isActive=false for deactivated sessions
+
+---
+
+8. USER VIEW LIMITS
+-------------------
+Description: Limit what regular users can see
+
+User sees:
+- Only their own scores
+- The score that will be used for metrics (first pass OR retake)
+- Number of questions, date taken, time taken
+- Review button after quiz is finalized
+
+Admin sees:
+- All users' attempts and scores
+- Which score was finally selected for metrics
+- Full analytics and metrics growth
+
+---
+
+PRIORITY ORDER
+--------------
+1. Analytics 401 fix (DONE)
+2. Password change tracking
+3. Session created by field
+4. Question answer reasons
+5. Review button after quiz
+6. Session card display fix
+7. Session deactivation behavior
+8. Retake feature (most complex)
+
+---
+
+IMPLEMENTATION NOTES
+--------------------
+- Most changes require database schema updates
+- Retake feature needs careful state management
+- Need to handle edge cases (user tries to access expired retake window)
+- Consider adding audit logging for important actions

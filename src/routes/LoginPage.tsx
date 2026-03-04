@@ -2,15 +2,16 @@ import { useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../lib/contexts/AuthContext'
 import Button from '../lib/components/Button'
-import { Key, Eye, EyeOff, AlertCircle } from 'lucide-react'
+import { Key, Eye, EyeOff, AlertCircle, ShieldCheck } from 'lucide-react'
 
 function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
+  const [rememberMe, setRememberMe] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const { login } = useAuth()
+  const { login, isLoading } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -20,25 +21,14 @@ function LoginPage() {
     setError('')
 
     try {
-      const response = await fetch('http://localhost:3001/api/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password })
-      })
+      const result = await login(email, password, rememberMe)
 
-      const data = await response.json()
-
-      if (response.ok) {
-        // Login successful - update auth context with tokens
-        login(data.email, data.department, data.isAdmin, data.accessToken, data.refreshToken)
-
+      if (result.success) {
         // Redirect to the intended page or appropriate dashboard based on user role
-        const from = location.state?.from?.pathname || (data.isAdmin ? '/admin' : '/dashboard')
+        const from = location.state?.from?.pathname || (rememberMe ? '/app/dashboard' : '/app/dashboard')
         navigate(from, { replace: true })
       } else {
-        setError(data.error || 'Login failed')
+        setError(result.error || 'Login failed')
       }
     } catch (err) {
       setError('Network error. Please try again.')
@@ -145,6 +135,22 @@ function LoginPage() {
                   )}
                 </button>
               </div>
+            </div>
+
+            {/* Remember Me Checkbox */}
+            <div className="flex items-center gap-3">
+              <input
+                id="remember-me"
+                name="remember-me"
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="h-4 w-4 text-bdo-blue focus:ring-bdo-blue border-gray-300 rounded"
+              />
+              <label htmlFor="remember-me" className="text-sm text-gray-700 flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4 text-bdo-blue" aria-hidden="true" />
+                <span>Keep me signed in (30 days)</span>
+              </label>
             </div>
 
             {/* Error Message */}

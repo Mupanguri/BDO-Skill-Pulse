@@ -3,27 +3,202 @@ import cors from 'cors'
 import bcrypt from 'bcrypt'
 import jwt from 'jsonwebtoken'
 import crypto from 'crypto'
-import path from 'path'
-import { fileURLToPath } from 'url'
-import sqlite3 from 'sqlite3'
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
+import { createRequire } from 'module'
+import logger from './src/lib/utils/logger.js'
 
 const app = express()
 const PORT = process.env.PORT || 3001
 
-// Initialize SQLite database connection
-const dbPath = path.resolve(__dirname, 'prisma', 'dev.db')
-console.log('Database path:', dbPath)
+// Use PostgreSQL database
+let pool = null
+let usePostgres = true
 
-const db = new sqlite3.Database(dbPath, (err) => {
-  if (err) {
-    console.error('Error opening database:', err)
-  } else {
-    console.log('Database connected successfully')
+// Database connection with logging
+const connectToDatabase = async () => {
+  const dbStartTime = logger.startPerformance('database_connection')
+  try {
+    const { Pool } = await import('pg')
+    pool = new Pool({
+      connectionString: process.env.DATABASE_URL || 'postgresql://postgres:windows@localhost:5432/bdo_quiz_system',
+      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+    })
+
+    // Test database connection
+    await pool.query('SELECT NOW()')
+    const duration = logger.endPerformance('database_connection')
+    logger.info('PostgreSQL connected successfully', { duration })
+    return true
+  } catch (err) {
+    const duration = logger.endPerformance('database_connection')
+    logger.error('PostgreSQL connection failed', err, { duration })
+    return false
   }
-})
+}
+
+// Initialize database connection
+const dbConnected = await connectToDatabase()
+if (!dbConnected) {
+  process.exit(1)
+}
+
+// Comprehensive Logging System
+const fs = await import('fs')
+const path = await import('path')
+const { fileURLToPath } = await import('url')
+
+// Logging configuration
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+const LOG_DIR = path.resolve(__dirname, 'logs')
+const LOG_FILE = path.join(LOG_DIR, 'api-requests.log')
+const ERROR_LOG_FILE = path.join(LOG_DIR, 'errors.log')
+const PERFORMANCE_LOG_FILE = path.join(LOG_DIR, 'performance.log')
+const BUTTON_ACTIONS_LOG_FILE = path.join(LOG_DIR, 'button-actions.log')
+const SYSTEM_HEALTH_LOG_FILE = path.join(LOG_DIR, 'system-health.log')
+
+// Ensure log directory exists
+if (!fs.existsSync(LOG_DIR)) {
+  fs.mkdirSync(LOG_DIR, { recursive: true })
+}
+
+// Logging utilities
+const logToFile = (filePath, message) => {
+  const timestamp = new Date().toISOString()
+  const logEntry = `[${timestamp}] ${message}\n`
+
+  try {
+    fs.appendFileSync(filePath, logEntry)
+  } catch (error) {
+    console.error('Failed to write to log file:', error)
+  }
+}
+
+// Comprehensive request logging middleware
+const logRequest = (req, res, next) => {
+  const startTime = Date.now()
+  const timestamp = new Date().toISOString()
+  const requestId = `req-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+
+  // Extract request details
+  const requestDetails = {
+    requestId,
+    timestamp,
+    method: req.method,
+    url: req.originalUrl,
+    userAgent: req.get('User-Agent') || 'Unknown',
+    ip: req.ip || req.connection.remoteAddress || 'Unknown',
+    contentType: req.get('Content-Type') || 'Unknown',
+    contentLength: req.get('Content-Length') || 'Unknown',
+    headers: {
+      authorization: req.get('Authorization') ? 'Bearer [TOKEN_PRESENT]' : 'None',
+      'x-forwarded-for': req.get('X-Forwarded-For') || 'None',
+      'x-real-ip': req.get('X-Real-IP') || 'None'
+    },
+    body: req.body || {},
+    query: req.query || {},
+    params: req.params || {}
+  }
+
+  // Log request details
+  logToFile(LOG_FILE, `REQUEST: ${JSON.stringify(requestDetails)}`)
+
+  // Log button actions based on URL patterns
+  if (req.originalUrl.includes('/api/sessions') && req.method === 'PATCH') {
+    logToFile(BUTTON_ACTIONS_LOG_FILE, `BUTTON_ACTION: Session Toggle - ${req.originalUrl} - ${req.body.isActive ? 'ACTIVATE' : 'DEACTIVATE'} - User: ${req.user?.email || 'Unknown'}`)
+  } else if (req.originalUrl.includes('/api/users') && req.method === 'POST') {
+    logToFile(BUTTON_ACTIONS_LOG_FILE, `BUTTON_ACTION: User Elevate - ${req.originalUrl} - User: ${req.body.email || 'Unknown'} - Admin: ${req.user?.email || 'Unknown'}`)
+  } else if (req.originalUrl.includes('/api/user') && req.originalUrl.includes('/password')) {
+    logToFile(BUTTON_ACTIONS_LOG_FILE, `BUTTON_ACTION: Password Change - ${req.originalUrl} - User: ${req.user?.email || 'Unknown'}`)
+  } else if (req.originalUrl.includes('/api/user') && req.originalUrl.includes('/profile')) {
+    logToFile(BUTTON_ACTIONS_LOG_FILE, `BUTTON_ACTION: Profile Update - ${req.originalUrl} - User: ${req.user?.email || 'Unknown'}`)
+  } else if (req.originalUrl.includes('/api/responses')) {
+    logToFile(BUTTON_ACTIONS_LOG_FILE, `BUTTON_ACTION: Quiz Submit - ${req.originalUrl} - User: ${req.body.userEmail || 'Unknown'} - Score: ${req.body.score || 'Unknown'}`)
+  } else if (req.originalUrl.includes('/api/feedback')) {
+    logToFile(BUTTON_ACTIONS_LOG_FILE, `BUTTON_ACTION: Feedback Submit - ${req.originalUrl} - User: ${req.body.userEmail || 'Unknown'} - Rating: ${req.body.rating || 'Unknown'}`)
+  } else if (req.originalUrl.includes('/api/login')) {
+    logToFile(BUTTON_ACTIONS_LOG_FILE, `BUTTON_ACTION: User Login - ${req.originalUrl} - Email: ${req.body.email || 'Unknown'}`)
+  } else if (req.originalUrl.includes('/api/register')) {
+    logToFile(BUTTON_ACTIONS_LOG_FILE, `BUTTON_ACTION: User Register - ${req.originalUrl} - Email: ${req.body.email || 'Unknown'} - Department: ${req.body.department || 'Unknown'}`)
+  }
+
+  // Override res.json to capture response
+  const originalJson = res.json
+  res.json = function (data) {
+    const endTime = process.hrtime.bigint()
+    const responseTime = Number(endTime - BigInt(startTime)) / 1000000 // Convert to milliseconds
+
+    // Log response details
+    const responseDetails = {
+      requestId,
+      timestamp: new Date().toISOString(),
+      statusCode: res.statusCode,
+      responseTime: `${Math.round(responseTime)}ms`,
+      responseBody: data || {}
+    }
+
+    logger.api(req.method, req.originalUrl, Math.round(responseTime), res.statusCode, responseDetails)
+
+    // Log errors
+    if (res.statusCode >= 400) {
+      logger.error(`HTTP ${res.statusCode} - ${req.method} ${req.originalUrl}`, null, {
+        statusCode: res.statusCode,
+        errorMessage: data?.error || 'Unknown error',
+        userAgent: req.get('User-Agent'),
+        ip: req.ip || req.connection.remoteAddress,
+        requestBody: req.body
+      })
+    }
+
+    return originalJson.call(this, data)
+  }
+
+  // Handle errors
+  res.on('finish', () => {
+    if (res.statusCode >= 400) {
+      const errorDetails = {
+        requestId,
+        timestamp: new Date().toISOString(),
+        method: req.method,
+        url: req.originalUrl,
+        statusCode: res.statusCode,
+        userAgent: req.get('User-Agent'),
+        ip: req.ip || req.connection.remoteAddress
+      }
+      logToFile(ERROR_LOG_FILE, `ERROR: ${JSON.stringify(errorDetails)}`)
+    }
+  })
+
+  next()
+}
+
+// System health monitoring
+const logSystemHealth = () => {
+  const healthData = {
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    memory: process.memoryUsage(),
+    cpu: process.cpuUsage(),
+    activeConnections: userSessions.length,
+    activeUsers: Object.keys(userCredentials).length,
+    databaseStatus: 'PostgreSQL Connected'
+  }
+
+  logToFile(SYSTEM_HEALTH_LOG_FILE, `HEALTH: ${JSON.stringify(healthData)}`)
+}
+
+// JWT Configuration
+const JWT_SECRET = process.env.JWT_SECRET || 'bdo-quiz-system-secret-key-change-in-production'
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'bdo-quiz-refresh-secret-key-change-in-production'
+const JWT_EXPIRES_IN = '1h' // 1 hour for access token
+const JWT_REFRESH_EXPIRES_IN = '7d' // 7 days for refresh token
+const SESSION_TIMEOUT = 60 * 60 * 1000 // 60 minutes (1 hour) in milliseconds
+
+// Log system startup
+logToFile(LOG_FILE, `SYSTEM_STARTUP: BDO Skills Pulse API server starting on http://localhost:${PORT}`)
+logToFile(LOG_FILE, `SYSTEM_CONFIG: JWT_EXPIRES_IN=${JWT_EXPIRES_IN}, JWT_REFRESH_EXPIRES_IN=${JWT_REFRESH_EXPIRES_IN}, SESSION_TIMEOUT=${SESSION_TIMEOUT}`)
+
+// Set up periodic health logging
+setInterval(logSystemHealth, 60000) // Log every minute
 
 // Middleware
 app.use(cors({
@@ -32,31 +207,33 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }))
-app.use(express.json())
+app.use(express.json({ limit: '10mb' }))
+app.use(logRequest) // Add comprehensive logging middleware
 
 // Initialize user credentials from database
 const initializeUserCredentials = async () => {
-  return new Promise((resolve, reject) => {
-    db.all('SELECT email, password, department, isAdmin FROM User', [], (err, rows) => {
-      if (err) {
-        console.error('Error loading users from database:', err)
-        resolve({})
-        return
-      }
+  try {
+    const result = await pool.query('SELECT email, password, department, "isAdmin", "displayName", "darkMode", "profileImage", "lastPasswordChange" FROM "User"')
+    const credentials = {}
 
-      const credentials = {}
-      for (const user of rows) {
-        credentials[user.email] = {
-          password: user.password, // Already hashed in database
-          department: user.department,
-          isAdmin: Boolean(user.isAdmin)
-        }
+    for (const user of result.rows) {
+      credentials[user.email] = {
+        password: user.password, // Already hashed in database
+        department: user.department,
+        isAdmin: Boolean(user.isAdmin),
+        displayName: user.displayName,
+        darkMode: Boolean(user.darkMode),
+        profileImage: user.profileImage,
+        lastPasswordChange: user.lastPasswordChange
       }
+    }
 
-      console.log(`Loaded ${rows.length} users from database`)
-      resolve(credentials)
-    })
-  })
+    console.log(`Loaded ${result.rows.length} users from PostgreSQL database`)
+    return credentials
+  } catch (err) {
+    console.error('Error loading users from database:', err)
+    return {}
+  }
 }
 
 // Global user credentials (will be initialized on server start)
@@ -71,133 +248,122 @@ let userRetakes = {}
 // User notifications
 let userNotifications = {}
 
-// Mock data for demonstration
-let mockSessions = [
-  {
-    id: 'session-1',
-    name: 'Q1 2024 Tax Quiz',
-    date: '2024-03-15T10:00:00.000Z',
-    time: '10:00',
-    isActive: true,
-    createdAt: '2024-03-01T09:00:00.000Z',
-    createdBy: 'admin@bdo.co.zw',
-    questions: [
-      {
-        id: 'q1',
-        text: 'What is the current corporate tax rate in Zimbabwe?',
-        options: ['25%', '30%', '35%', '40%'],
-        correctAnswer: 1,
-        type: 'multiple-choice'
-      },
-      {
-        id: 'q2',
-        text: 'Which of the following is considered a tax-deductible expense?',
-        options: ['Personal travel costs', 'Business entertainment', 'Employee salaries', 'Dividends paid'],
-        correctAnswer: 2,
-        type: 'multiple-choice'
-      },
-      {
-        id: 'q3',
-        text: 'What is the VAT rate in Zimbabwe?',
-        options: ['12%', '14%', '15%', '16%'],
-        correctAnswer: 1,
-        type: 'multiple-choice'
-      }
-    ],
-    _count: { responses: 5 }
-  },
-  {
-    id: 'session-2',
-    name: 'Q2 2024 Audit Procedures Quiz',
-    date: '2024-06-20T14:00:00.000Z',
-    time: '14:00',
-    isActive: false,
-    createdAt: '2024-05-15T11:00:00.000Z',
-    createdBy: 'admin@bdo.co.zw',
-    questions: [
-      {
-        id: 'q1',
-        text: 'What is the primary objective of an audit?',
-        options: ['To detect fraud', 'To express an opinion on financial statements', 'To prepare tax returns', 'To manage company finances'],
-        correctAnswer: 1,
-        type: 'multiple-choice'
-      },
-      {
-        id: 'q2',
-        text: 'Which of the following is a type of audit evidence?',
-        options: ['Physical inspection', 'Reperformance', 'Observation', 'All of the above'],
-        correctAnswer: 3,
-        type: 'multiple-choice'
-      }
-    ],
-    _count: { responses: 0 }
-  }
-]
+// Database queries for sessions and responses
+const getSessionsFromDB = async () => {
+  try {
+    if (usePostgres) {
+      const result = await pool.query(`
+        SELECT s.*, COUNT(r.id) as responseCount
+        FROM "QuizSession" s
+        LEFT JOIN "QuizResponse" r ON s.id = r."sessionId"
+        GROUP BY s.id
+        ORDER BY s."createdAt" DESC
+      `)
 
-let mockResponses = [
-  {
-    id: 'response-1',
-    sessionId: 'session-1',
-    score: 80,
-    timeSpent: 450, // 7.5 minutes
-    completedAt: '2024-03-15T10:45:00.000Z',
-    user: {
-      email: 'john.doe@bdo.co.zw',
-      department: 'Tax'
-    }
-  },
-  {
-    id: 'response-2',
-    sessionId: 'session-1',
-    score: 90,
-    timeSpent: 380,
-    completedAt: '2024-03-15T11:00:00.000Z',
-    user: {
-      email: 'jane.smith@bdo.co.zw',
-      department: 'Audit'
-    }
-  },
-  {
-    id: 'response-3',
-    sessionId: 'session-1',
-    score: 70,
-    timeSpent: 520,
-    completedAt: '2024-03-15T11:15:00.000Z',
-    user: {
-      email: 'mike.johnson@bdo.co.zw',
-      department: 'IT'
-    }
-  },
-  {
-    id: 'response-4',
-    sessionId: 'session-2',
-    score: 85,
-    timeSpent: 420,
-    completedAt: '2024-06-20T15:30:00.000Z',
-    user: {
-      email: 'john.doe@bdo.co.zw',
-      department: 'Tax'
-    }
-  },
-  {
-    id: 'response-5',
-    sessionId: 'session-2',
-    score: 75,
-    timeSpent: 480,
-    completedAt: '2024-06-20T16:00:00.000Z',
-    user: {
-      email: 'jane.smith@bdo.co.zw',
-      department: 'Audit'
-    }
-  }
-]
+      const sessions = result.rows.map(row => ({
+        id: row.id,
+        name: row.name,
+        date: row.date,
+        time: row.time,
+        isActive: Boolean(row.isActive),
+        createdAt: row.createdAt,
+        createdBy: row.createdBy,
+        questions: JSON.parse(row.questions || '[]'),
+        _count: { responses: row.responseCount || 0 }
+      }))
 
-// JWT Configuration
-const JWT_SECRET = process.env.JWT_SECRET || 'bdo-quiz-system-secret-key-change-in-production'
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'bdo-quiz-refresh-secret-key-change-in-production'
-const JWT_EXPIRES_IN = '15m' // 15 minutes for access token
-const JWT_REFRESH_EXPIRES_IN = '7d' // 7 days for refresh token
-const SESSION_TIMEOUT = 30 * 60 * 1000 // 30 minutes in milliseconds
+      return sessions
+    } else {
+      return new Promise((resolve, reject) => {
+        db.all(`
+          SELECT s.*, COUNT(r.id) as responseCount
+          FROM QuizSession s
+          LEFT JOIN QuizResponse r ON s.id = r.sessionId
+          GROUP BY s.id
+          ORDER BY s.createdAt DESC
+        `, [], (err, rows) => {
+          if (err) {
+            console.error('Error fetching sessions:', err)
+            reject(err)
+          } else {
+            const sessions = rows.map(row => ({
+              id: row.id,
+              name: row.name,
+              date: row.date,
+              time: row.time,
+              isActive: Boolean(row.isActive),
+              createdAt: row.createdAt,
+              createdBy: row.createdBy,
+              questions: JSON.parse(row.questions || '[]'),
+              _count: { responses: row.responseCount || 0 }
+            }))
+            resolve(sessions)
+          }
+        })
+      })
+    }
+  } catch (err) {
+    console.error('Error fetching sessions:', err)
+    throw err
+  }
+}
+
+const getResponsesFromDB = async () => {
+  try {
+    if (usePostgres) {
+      const result = await pool.query(`
+        SELECT r.*, u.email, u.department
+        FROM "QuizResponse" r
+        JOIN "User" u ON r."userId" = u.id
+        ORDER BY r."completedAt" DESC
+      `)
+
+      const responses = result.rows.map(row => ({
+        id: row.id,
+        sessionId: row.sessionId,
+        score: row.score,
+        timeSpent: row.timeSpent,
+        completedAt: row.completedAt,
+        user: {
+          email: row.email,
+          department: row.department
+        }
+      }))
+
+      return responses
+    } else {
+      return new Promise((resolve, reject) => {
+        db.all(`
+          SELECT r.*, u.email, u.department
+          FROM QuizResponse r
+          JOIN User u ON r.userId = u.id
+          ORDER BY r.completedAt DESC
+        `, [], (err, rows) => {
+          if (err) {
+            console.error('Error fetching responses:', err)
+            reject(err)
+          } else {
+            const responses = rows.map(row => ({
+              id: row.id,
+              sessionId: row.sessionId,
+              score: row.score,
+              timeSpent: row.timeSpent,
+              completedAt: row.completedAt,
+              user: {
+                email: row.email,
+                department: row.department
+              }
+            }))
+            resolve(responses)
+          }
+        })
+      })
+    }
+  } catch (err) {
+    console.error('Error fetching responses:', err)
+    throw err
+  }
+}
 
 // Generate tokens
 const generateTokens = (user) => {
@@ -224,6 +390,7 @@ const authenticateToken = async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET)
+    console.log('Token decoded:', JSON.stringify(decoded))
     req.user = decoded
     next()
   } catch (error) {
@@ -236,35 +403,109 @@ const authenticateToken = async (req, res, next) => {
 
 // API Routes
 
-// GET /api/users - Get all users
-app.get('/api/users', (req, res) => {
-  const users = Object.keys(userCredentials).map(email => ({
-    email,
-    department: userCredentials[email].department,
-    isAdmin: userCredentials[email].isAdmin
-  }))
-  res.json(users)
+// GET /api/users - Get all users with enhanced profile data
+app.get('/api/users', authenticateToken, async (req, res) => {
+  try {
+    // Check if user is admin
+    if (!req.user.isAdmin) {
+      return res.status(403).json({ error: 'Admin access required' })
+    }
+
+    let users = []
+
+    if (usePostgres) {
+      const result = await pool.query(`
+        SELECT id, email, department, "isAdmin", "displayName", "darkMode", "profileImage", "lastPasswordChange", "createdAt"
+        FROM "User"
+        ORDER BY "createdAt" DESC
+      `)
+      users = result.rows.map(row => ({
+        id: row.id,
+        email: row.email,
+        department: row.department,
+        isAdmin: Boolean(row.isAdmin),
+        displayName: row.displayName,
+        darkMode: Boolean(row.darkMode),
+        profileImage: row.profileImage,
+        lastPasswordChange: row.lastPasswordChange,
+        createdAt: row.createdAt
+      }))
+    } else {
+      users = await new Promise((resolve, reject) => {
+        db.all(`
+          SELECT id, email, department, isAdmin, displayName, darkMode, profileImage, lastPasswordChange, createdAt
+          FROM User
+          ORDER BY createdAt DESC
+        `, [], (err, rows) => {
+          if (err) {
+            reject(err)
+          } else {
+            resolve(rows.map(row => ({
+              id: row.id,
+              email: row.email,
+              department: row.department,
+              isAdmin: Boolean(row.isAdmin),
+              displayName: row.displayName,
+              darkMode: Boolean(row.darkMode),
+              profileImage: row.profileImage,
+              lastPasswordChange: row.lastPasswordChange,
+              createdAt: row.createdAt
+            })))
+          }
+        })
+      })
+    }
+
+    res.json(users)
+  } catch (error) {
+    console.error('Error fetching users:', error)
+    res.status(500).json({ error: 'Failed to fetch users' })
+  }
 })
 
 // GET /api/sessions - Get all sessions
-app.get('/api/sessions', (req, res) => {
-  res.json(mockSessions)
+app.get('/api/sessions', async (req, res) => {
+  try {
+    const sessions = await getSessionsFromDB()
+    res.json(sessions)
+  } catch (error) {
+    console.error('Error fetching sessions:', error)
+    res.status(500).json({ error: 'Failed to fetch sessions' })
+  }
 })
 
 // GET /api/sessions/:id - Get a specific session with responses
-app.get('/api/sessions/:id', (req, res) => {
-  const session = mockSessions.find(s => s.id === req.params.id)
-  if (!session) {
-    return res.status(404).json({ error: 'Session not found' })
-  }
+app.get('/api/sessions/:id', async (req, res) => {
+  try {
+    console.log('Fetching session with id:', req.params.id)
+    const sessions = await getSessionsFromDB()
+    const responses = await getResponsesFromDB()
 
-  // Add responses to the session
-  const sessionWithResponses = {
-    ...session,
-    responses: mockResponses
-  }
+    console.log('Available sessions:', sessions.map(s => s.id))
+    const session = sessions.find(s => s.id === req.params.id)
+    if (!session) {
+      console.log('Session not found:', req.params.id)
+      return res.status(404).json({ error: 'Session not found' })
+    }
 
-  res.json(sessionWithResponses)
+    // Filter responses by userEmail if provided (for review mode)
+    const userEmail = req.query.userEmail
+    let sessionResponses = responses.filter(r => r.sessionId === session.id)
+    
+    if (userEmail) {
+      sessionResponses = sessionResponses.filter(r => r.user?.email === userEmail)
+    }
+    
+    const sessionWithResponses = {
+      ...session,
+      responses: sessionResponses
+    }
+
+    res.json(sessionWithResponses)
+  } catch (error) {
+    console.error('Error fetching session:', error)
+    res.status(500).json({ error: 'Failed to fetch session' })
+  }
 })
 
 // POST /api/sessions - Create a new session
@@ -278,87 +519,182 @@ app.post('/api/sessions', authenticateToken, async (req, res) => {
     _count: { responses: 0 }
   }
 
-  mockSessions.push(newSession)
-
-  // Log audit action
-  await logAuditAction(
-    req.user.email,
-    'create_quiz',
-    {
-      sessionId: newSession.id,
-      sessionName: newSession.name,
-      department: newSession.department,
-      questionCount: newSession.questions.length
-    },
-    req
-  )
-
-  // Send notifications to target department
-  if (newSession.department) {
-    try {
-      await fetch(`http://localhost:3001/api/department/${newSession.department}/notifications`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          type: 'quiz_posted',
-          title: 'New Quiz Available',
-          message: `${req.user.email.split('@')[0].toUpperCase()} has posted a quiz for the ${newSession.department === 'everyone' ? 'all departments' : newSession.department + ' department'} to be completed within the stated time lines. please address this ticket.`,
-          adminEmail: req.user.email,
-          quizName: newSession.name
+  try {
+    if (usePostgres) {
+      // Insert into PostgreSQL database
+      await pool.query(`
+        INSERT INTO "QuizSession" (id, name, date, time, "isActive", "createdAt", "createdBy", questions)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `, [
+        newSession.id,
+        newSession.name,
+        newSession.date,
+        newSession.time,
+        newSession.isActive,
+        newSession.createdAt,
+        newSession.createdBy,
+        JSON.stringify(newSession.questions || [])
+      ])
+    } else {
+      // Insert into database
+      await new Promise((resolve, reject) => {
+        db.run(`
+          INSERT INTO QuizSession (id, name, date, time, isActive, createdAt, createdBy, questions)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          newSession.id,
+          newSession.name,
+          newSession.date,
+          newSession.time,
+          newSession.isActive,
+          newSession.createdAt,
+          newSession.createdBy,
+          JSON.stringify(newSession.questions || [])
+        ], (err) => {
+          if (err) {
+            reject(err)
+          } else {
+            resolve()
+          }
         })
       })
-    } catch (error) {
-      console.error('Failed to send quiz notification:', error)
     }
-  }
 
-  res.status(201).json(newSession)
+    // Log audit action
+    logAuditAction(
+      req.user.email,
+      'create_quiz',
+      {
+        sessionId: newSession.id,
+        sessionName: newSession.name,
+        department: newSession.department,
+        questionCount: newSession.questions.length
+      },
+      req
+    )
+
+    // Send notifications to target department
+    if (newSession.department) {
+      try {
+        fetch(`http://localhost:3001/api/department/${newSession.department}/notifications`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            type: 'quiz_posted',
+            title: 'New Quiz Available',
+            message: `${req.user.email.split('@')[0].toUpperCase()} has posted a quiz for the ${newSession.department === 'everyone' ? 'all departments' : newSession.department + ' department'} to be completed within the stated time lines. please address this ticket.`,
+            adminEmail: req.user.email,
+            quizName: newSession.name
+          })
+        })
+      } catch (error) {
+        console.error('Failed to send quiz notification:', error)
+      }
+    }
+
+    res.status(201).json(newSession)
+  } catch (err) {
+    console.error('Error creating session:', err)
+    res.status(500).json({ error: 'Failed to create session' })
+  }
 })
 
 // PATCH /api/sessions/:id - Update session (e.g., activate/deactivate)
-app.patch('/api/sessions/:id', (req, res) => {
+app.patch('/api/sessions/:id', authenticateToken, async (req, res) => {
   console.log(`PATCH /api/sessions/${req.params.id} received`)
   console.log('Request body:', req.body)
 
-  const sessionIndex = mockSessions.findIndex(s => s.id === req.params.id)
-  if (sessionIndex === -1) {
-    console.log('Session not found')
-    return res.status(404).json({ error: 'Session not found' })
+  const { isActive } = req.body
+
+  try {
+    let result
+    if (usePostgres) {
+      // Update in PostgreSQL database
+      result = await pool.query(`
+        UPDATE "QuizSession" 
+        SET "isActive" = $1, "updatedAt" = $2
+        WHERE id = $3
+        RETURNING id, name, "isActive"
+      `, [isActive, new Date().toISOString(), req.params.id])
+    } else {
+      // Update in database
+      result = await new Promise((resolve, reject) => {
+        db.run(`
+          UPDATE QuizSession 
+          SET isActive = ?, updatedAt = ?
+          WHERE id = ?
+        `, [isActive, new Date().toISOString(), req.params.id], function (err) {
+          if (err) {
+            reject(err)
+          } else {
+            // Get the updated record
+            db.get(`SELECT id, name, isActive FROM QuizSession WHERE id = ?`, [req.params.id], (err, row) => {
+              if (err) {
+                reject(err)
+              } else {
+                resolve({ rows: [row] })
+              }
+            })
+          }
+        })
+      })
+    }
+
+    if (!result.rows || result.rows.length === 0) {
+      console.log('Session not found')
+      return res.status(404).json({ error: 'Session not found' })
+    }
+
+    console.log('Session updated successfully')
+    res.json({
+      message: 'Session updated successfully',
+      id: req.params.id,
+      isActive: result.rows[0].isActive
+    })
+  } catch (err) {
+    console.error('Error updating session:', err)
+    res.status(500).json({ error: 'Failed to update session' })
   }
-
-  const oldSession = mockSessions[sessionIndex]
-  mockSessions[sessionIndex] = {
-    ...mockSessions[sessionIndex],
-    ...req.body
-  }
-
-  const newSession = mockSessions[sessionIndex]
-  console.log('Session updated from:', { isActive: oldSession.isActive }, 'to:', { isActive: newSession.isActive })
-  console.log('Updated session:', newSession)
-
-  res.json(mockSessions[sessionIndex])
 })
 
 // GET /api/sessions/active - Get the currently active session
-app.get('/api/sessions/active', (req, res) => {
-  const activeSession = mockSessions.find(s => s.isActive)
-  res.json(activeSession || null)
+app.get('/api/sessions/active', async (req, res) => {
+  try {
+    const sessions = await getSessionsFromDB()
+    const activeSession = sessions.find(s => s.isActive)
+    res.json(activeSession || null)
+  } catch (error) {
+    console.error('Error fetching active session:', error)
+    res.status(500).json({ error: 'Failed to fetch active session' })
+  }
 })
 
 // GET /api/user/:email/submissions - Get user's quiz submissions
-app.get('/api/user/:email/submissions', (req, res) => {
-  const userEmail = req.params.email
-  const userSubmissions = mockResponses.filter(response => response.user.email === userEmail)
-  res.json(userSubmissions)
+app.get('/api/user/:email/submissions', async (req, res) => {
+  try {
+    const responses = await getResponsesFromDB()
+    const userEmail = req.params.email
+    const userSubmissions = responses.filter(response => response.user.email === userEmail)
+    res.json(userSubmissions)
+  } catch (error) {
+    console.error('Error fetching user submissions:', error)
+    res.status(500).json({ error: 'Failed to fetch user submissions' })
+  }
 })
 
 // GET /api/user/:email/session/:sessionId/submission - Check if user has submitted specific session
-app.get('/api/user/:email/session/:sessionId/submission', (req, res) => {
-  const { email, sessionId } = req.params
-  const hasSubmitted = mockResponses.some(response => response.user.email === email && response.sessionId === sessionId)
-  res.json({ hasSubmitted })
+app.get('/api/user/:email/session/:sessionId/submission', async (req, res) => {
+  try {
+    const responses = await getResponsesFromDB()
+    const { email, sessionId } = req.params
+    const hasSubmitted = responses.some(response => response.user.email === email && response.sessionId === sessionId)
+    res.json({ hasSubmitted })
+  } catch (error) {
+    console.error('Error checking submission:', error)
+    res.status(500).json({ error: 'Failed to check submission' })
+  }
 })
 
 // GET /api/user/:email/warnings - Get user's warning status
@@ -494,18 +830,44 @@ app.get('/api/user/:email/session/:sessionId/retake-status', (req, res) => {
     userRetakes[email][sessionId] = {
       attempts: 0,
       cooldownUntil: null,
-      canRetake: false
+      retakeWindowStart: null,
+      retakeWindowEnd: null,
+      canRetake: false,
+      passed: false,
+      finalScore: null
     }
   }
 
   const retakeStatus = userRetakes[email][sessionId]
   const now = Date.now()
-  const cooldownEnd = retakeStatus.cooldownUntil ? new Date(retakeStatus.cooldownUntil).getTime() : 0
 
-  // Check if cooldown has expired
-  if (cooldownEnd > 0 && now >= cooldownEnd) {
-    retakeStatus.canRetake = retakeStatus.attempts < 1
+  // Check if cooldown has expired and start retake window
+  if (retakeStatus.cooldownUntil) {
+    const cooldownEnd = new Date(retakeStatus.cooldownUntil).getTime()
+    if (now >= cooldownEnd && retakeStatus.attempts < 2) {
+      // Cooldown expired, start 2-hour retake window
+      retakeStatus.cooldownUntil = null
+      retakeStatus.retakeWindowStart = new Date().toISOString()
+      retakeStatus.retakeWindowEnd = new Date(now + 2 * 60 * 60 * 1000).toISOString() // 2 hours from now
+      retakeStatus.canRetake = true
+    }
+  }
+
+  // Check if retake window has expired
+  if (retakeStatus.retakeWindowEnd) {
+    const windowEnd = new Date(retakeStatus.retakeWindowEnd).getTime()
+    if (now >= windowEnd) {
+      // Retake window expired
+      retakeStatus.canRetake = false
+      retakeStatus.retakeWindowEnd = null
+    }
+  }
+
+  // Check if max attempts reached
+  if (retakeStatus.attempts >= 2) {
+    retakeStatus.canRetake = false
     retakeStatus.cooldownUntil = null
+    retakeStatus.retakeWindowEnd = null
   }
 
   res.json(retakeStatus)
@@ -533,15 +895,19 @@ app.post('/api/user/:email/session/:sessionId/start-retake', (req, res) => {
     userRetakes[email][sessionId] = {
       attempts: 0,
       cooldownUntil: null,
-      canRetake: false
+      retakeWindowStart: null,
+      retakeWindowEnd: null,
+      canRetake: false,
+      passed: false,
+      finalScore: score
     }
   }
 
   const retakeData = userRetakes[email][sessionId]
 
-  // Check if user already used their retake attempt
-  if (retakeData.attempts >= 1) {
-    return res.status(400).json({ error: 'Maximum retake attempts reached' })
+  // Check if user already used their 2 retake attempts
+  if (retakeData.attempts >= 2) {
+    return res.status(400).json({ error: 'Maximum retake attempts (2) reached' })
   }
 
   // Start 30-minute cooldown
@@ -549,12 +915,13 @@ app.post('/api/user/:email/session/:sessionId/start-retake', (req, res) => {
 
   retakeData.cooldownUntil = cooldownEnd
   retakeData.canRetake = false
-  retakeData.attempts = 1
+  retakeData.finalScore = score
 
   res.json({
     message: 'Retake cooldown started',
     cooldownUntil: cooldownEnd,
-    attemptsRemaining: 0
+    attemptsRemaining: 2 - retakeData.attempts,
+    nextStatus: 'retake_window'
   })
 })
 
@@ -685,6 +1052,11 @@ app.post('/api/feedback', async (req, res) => {
   const { userEmail, sessionId, rating, comments } = req.body
 
   try {
+    // Ensure quizFeedback is initialized
+    if (!quizFeedback || !Array.isArray(quizFeedback)) {
+      quizFeedback = []
+    }
+    
     // Check if feedback already exists
     const existingFeedback = quizFeedback.find(f => f.userEmail === userEmail && f.sessionId === sessionId)
 
@@ -720,11 +1092,16 @@ app.get('/api/feedback/check/:userEmail/:sessionId', async (req, res) => {
   const { userEmail, sessionId } = req.params
 
   try {
+    // Ensure quizFeedback is initialized
+    if (!quizFeedback || !Array.isArray(quizFeedback)) {
+      quizFeedback = []
+    }
+    
     const feedback = quizFeedback.find(f => f.userEmail === userEmail && f.sessionId === sessionId)
 
     res.json({
       hasFeedback: !!feedback,
-      feedback: feedback
+      feedback: feedback || null
     })
 
   } catch (error) {
@@ -739,6 +1116,11 @@ app.get('/api/feedback/admin', authenticateToken, async (req, res) => {
     // Check if user is admin
     if (!req.user.isAdmin) {
       return res.status(403).json({ error: 'Admin access required' })
+    }
+
+    // Ensure quizFeedback is initialized
+    if (!quizFeedback || !Array.isArray(quizFeedback)) {
+      quizFeedback = []
     }
 
     const feedback = quizFeedback.sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime())
@@ -757,6 +1139,11 @@ app.get('/api/feedback/stats', authenticateToken, async (req, res) => {
     // Check if user is admin
     if (!req.user.isAdmin) {
       return res.status(403).json({ error: 'Admin access required' })
+    }
+
+    // Ensure quizFeedback is initialized
+    if (!quizFeedback || !Array.isArray(quizFeedback)) {
+      quizFeedback = []
     }
 
     const feedback = quizFeedback
@@ -781,6 +1168,102 @@ app.get('/api/feedback/stats', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Failed to get feedback stats:', error)
     res.status(500).json({ error: 'Failed to get feedback statistics' })
+  }
+})
+
+// GET /api/analytics - Get analytics data (admin access required)
+app.get('/api/analytics', authenticateToken, async (req, res) => {
+  try {
+    // Log the decoded user for debugging
+    console.log('Analytics request - user:', JSON.stringify(req.user))
+    
+    // Check if user is admin
+    if (!req.user.isAdmin) {
+      console.log('Admin access denied for:', req.user.email)
+      return res.status(403).json({ error: 'Admin access required' })
+    }
+
+    const timeRange = req.query.timeRange || '7d'
+    const now = new Date()
+    let startDate
+
+    switch (timeRange) {
+      case '7d':
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+        break
+      case '30d':
+        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+        break
+      case '90d':
+        startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
+        break
+      default:
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+    }
+
+    // Get sessions and responses from database
+    const sessions = await getSessionsFromDB()
+    const responses = await getResponsesFromDB()
+
+    // Filter data by date range
+    const filteredSessions = sessions.filter(s => new Date(s.createdAt) >= startDate)
+    const filteredResponses = responses.filter(r => new Date(r.completedAt) >= startDate)
+
+    // Calculate analytics
+    // Filter responses to only include the highest score per user per session
+    const userSessionBestScores = {}
+    filteredResponses.forEach(response => {
+      const key = `${response.userId}_${response.sessionId}`
+      if (!userSessionBestScores[key] || response.score > userSessionBestScores[key].score) {
+        userSessionBestScores[key] = response
+      }
+    })
+    const bestResponses = Object.values(userSessionBestScores)
+
+    const stats = {
+      totalSessions: filteredSessions.length,
+      totalResponses: bestResponses.length, // Only count best score per user per session
+      averageScore: bestResponses.length > 0
+        ? Math.round((bestResponses.reduce((sum, r) => sum + r.score, 0) / bestResponses.length) * 10) / 10
+        : 0,
+      sessionsByDepartment: {},
+      responsesByDepartment: {},
+      scoreDistribution: {
+        '0-20': 0,
+        '21-40': 0,
+        '41-60': 0,
+        '61-80': 0,
+        '81-100': 0
+      },
+      recentActivity: bestResponses.slice(0, 10)
+    }
+
+    // Calculate department breakdowns
+    filteredSessions.forEach(session => {
+      const dept = session.department || 'Unknown'
+      stats.sessionsByDepartment[dept] = (stats.sessionsByDepartment[dept] || 0) + 1
+    })
+
+    // Use bestResponses for department stats to only count highest score per user per session
+    bestResponses.forEach(response => {
+      const dept = response.user.department || 'Unknown'
+      stats.responsesByDepartment[dept] = (stats.responsesByDepartment[dept] || 0) + 1
+    })
+
+    // Calculate score distribution using best scores
+    bestResponses.forEach(response => {
+      const score = response.score
+      if (score <= 20) stats.scoreDistribution['0-20']++
+      else if (score <= 40) stats.scoreDistribution['21-40']++
+      else if (score <= 60) stats.scoreDistribution['41-60']++
+      else if (score <= 80) stats.scoreDistribution['61-80']++
+      else stats.scoreDistribution['81-100']++
+    })
+
+    res.json(stats)
+  } catch (error) {
+    console.error('Failed to get analytics:', error)
+    res.status(500).json({ error: 'Failed to get analytics data' })
   }
 })
 
@@ -951,7 +1434,35 @@ app.post('/api/quiz-progress', async (req, res) => {
   const { userEmail, sessionId, answers, timeRemaining } = req.body
 
   try {
-    // Find existing progress
+    // If using PostgreSQL, save to database
+    if (usePostgres) {
+      const answersJson = JSON.stringify(answers)
+      
+      // Check if progress exists
+      const existingResult = await pool.query(
+        `SELECT id FROM "QuizProgress" WHERE "userEmail" = $1 AND "sessionId" = $2`,
+        [userEmail, sessionId]
+      )
+      
+      if (existingResult.rows.length > 0) {
+        // Update existing progress
+        await pool.query(
+          `UPDATE "QuizProgress" SET answers = $1, "timeRemaining" = $2, "lastSaved" = $3 WHERE "userEmail" = $4 AND "sessionId" = $5`,
+          [answersJson, timeRemaining, new Date(), userEmail, sessionId]
+        )
+      } else {
+        // Insert new progress
+        await pool.query(
+          `INSERT INTO "QuizProgress" ("userEmail", "sessionId", answers, "timeRemaining", "lastSaved") VALUES ($1, $2, $3, $4, $5)`,
+          [userEmail, sessionId, answersJson, timeRemaining, new Date()]
+        )
+      }
+      
+      const progress = { userEmail, sessionId, answers, timeRemaining, lastSaved: new Date().toISOString() }
+      return res.json({ message: 'Progress saved successfully', progress })
+    }
+    
+    // In-memory fallback
     let progress = quizProgress.find(p => p.userEmail === userEmail && p.sessionId === sessionId)
 
     if (progress) {
@@ -984,6 +1495,28 @@ app.get('/api/quiz-progress/:userEmail/:sessionId', async (req, res) => {
   const { userEmail, sessionId } = req.params
 
   try {
+    // If using PostgreSQL, get from database
+    if (usePostgres) {
+      const result = await pool.query(
+        `SELECT * FROM "QuizProgress" WHERE "userEmail" = $1 AND "sessionId" = $2`,
+        [userEmail, sessionId]
+      )
+      
+      if (result.rows.length === 0) {
+        return res.json(null)
+      }
+      
+      const row = result.rows[0]
+      return res.json({
+        id: row.id,
+        userEmail: row.userEmail,
+        sessionId: row.sessionId,
+        answers: JSON.parse(row.answers),
+        timeRemaining: row.timeRemaining,
+        lastSaved: row.lastSaved
+      })
+    }
+    
     const progress = quizProgress.find(p => p.userEmail === userEmail && p.sessionId === sessionId)
 
     if (!progress) {
@@ -999,7 +1532,7 @@ app.get('/api/quiz-progress/:userEmail/:sessionId', async (req, res) => {
 
 // POST /api/register - User registration
 app.post('/api/register', async (req, res) => {
-  const { email, password, department } = req.body
+  const { email, password, department, displayName } = req.body
 
   if (!email || !password || !department) {
     return res.status(400).json({ error: 'Email, password, and department are required' })
@@ -1016,30 +1549,58 @@ app.post('/api/register', async (req, res) => {
     return res.status(400).json({ error: 'Only @bdo.co.zw email addresses are allowed' })
   }
 
-  // Check if user already exists
-  if (userCredentials[email]) {
-    return res.status(409).json({ error: 'User already exists' })
-  }
-
   try {
+    // Check if user already exists in database
+    const result = await pool.query('SELECT email FROM "User" WHERE email = $1', [email])
+    const existingUser = result.rows[0]
+
+    if (existingUser) {
+      return res.status(409).json({ error: 'User already exists' })
+    }
+
     // Hash password
     const saltRounds = 10
     const hashedPassword = await bcrypt.hash(password, saltRounds)
 
-    // Add to user credentials (in production, this would be saved to database)
+    // Add to database with profile fields
+    const now = new Date().toISOString()
+    const userId = `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+
+    await pool.query(`
+      INSERT INTO "User" (id, email, password, department, "isAdmin", "displayName", "darkMode", "createdAt")
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `, [userId, email, hashedPassword, department, false, displayName || null, false, now])
+
+    // Add to in-memory credentials
     userCredentials[email] = {
       password: hashedPassword,
       department: department,
-      isAdmin: false // New users are not admins by default
+      isAdmin: false
     }
 
     res.status(201).json({
       message: 'User registered successfully',
       email: email,
       department: department,
-      isAdmin: false
+      isAdmin: false,
+      displayName: displayName || null,
+      darkMode: false
     })
   } catch (error) {
+    // Log the actual error to file for debugging
+    const errorDetails = {
+      requestId: req.requestId || `req-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      method: req.method,
+      url: req.originalUrl,
+      statusCode: 500,
+      errorMessage: error.message,
+      errorStack: error.stack,
+      userAgent: req.get('user-agent'),
+      ip: req.ip,
+      requestBody: { email, department, password: '***' }
+    }
+    logToFile(ERROR_LOG_FILE, JSON.stringify(errorDetails))
     console.error('Registration error:', error)
     res.status(500).json({ error: 'Registration failed' })
   }
@@ -1069,7 +1630,7 @@ app.post('/api/login', async (req, res) => {
     }
 
     // Generate tokens
-    const { accessToken, refreshToken } = generateTokens(user)
+    const { accessToken, refreshToken } = generateTokens({ email, ...user })
 
     // Store session in memory
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000) // 15 minutes from now
@@ -1094,6 +1655,20 @@ app.post('/api/login', async (req, res) => {
       expiresIn: 15 * 60 // 15 minutes in seconds
     })
   } catch (error) {
+    // Log the actual error to file for debugging
+    const errorDetails = {
+      requestId: req.requestId || `req-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      method: req.method,
+      url: req.originalUrl,
+      statusCode: 500,
+      errorMessage: error.message,
+      errorStack: error.stack,
+      userAgent: req.get('user-agent'),
+      ip: req.ip,
+      requestBody: { email, password: '***' }
+    }
+    logToFile(ERROR_LOG_FILE, JSON.stringify(errorDetails))
     console.error('Login error:', error)
     res.status(500).json({ error: 'Login failed' })
   }
@@ -1110,11 +1685,15 @@ app.post('/api/refresh', async (req, res) => {
   try {
     // Verify refresh token
     const decoded = jwt.verify(refreshToken, JWT_REFRESH_SECRET)
+    console.log('Refresh token decoded:', decoded.email)
 
     // Check if refresh token exists in memory and is valid
     const sessionIndex = userSessions.findIndex(s => s.userEmail === decoded.email && s.refreshToken === refreshToken)
+    
+    console.log('User sessions:', userSessions.map(s => ({ email: s.userEmail, refreshToken: s.refreshToken ? 'present' : 'missing' })))
 
     if (sessionIndex === -1) {
+      console.log('Refresh token not found in memory for:', decoded.email)
       return res.status(403).json({ error: 'Invalid refresh token' })
     }
 
@@ -1239,62 +1818,415 @@ app.get('/api/session-status', authenticateToken, async (req, res) => {
 })
 
 // POST /api/responses - Submit quiz response
-app.post('/api/responses', (req, res) => {
+app.post('/api/responses', authenticateToken, async (req, res) => {
   const responseData = req.body
-  const newResponse = {
-    id: `response-${Date.now()}`,
-    ...responseData,
-    completedAt: responseData.completedAt || new Date().toISOString()
-  }
 
-  // Get user department from credentials
-  const user = userCredentials[responseData.userEmail]
-  const department = user ? user.department : 'Unknown'
+  try {
+    // Get user department and ID from credentials
+    const user = userCredentials[responseData.userEmail]
+    const department = user ? user.department : 'Unknown'
 
-  // Add to mock responses
-  mockResponses.push({
-    id: newResponse.id,
-    sessionId: newResponse.sessionId,
-    score: newResponse.score,
-    timeSpent: newResponse.timeSpent,
-    completedAt: newResponse.completedAt,
-    user: {
-      email: newResponse.userEmail,
-      department: department
-    }
-  })
+    // Look up user ID from email
+    const userResult = await pool.query('SELECT id FROM "User" WHERE email = $1', [responseData.userEmail])
+    const userId = userResult.rows[0]?.id
 
-  // Check if this is a low score that needs retake cooldown
-  if (responseData.score < 45) {
-    // Start retake cooldown immediately for warning zone scores
-    if (!userRetakes[responseData.userEmail]) {
-      userRetakes[responseData.userEmail] = {}
+    if (!userId) {
+      return res.status(404).json({ error: 'User not found' })
     }
 
-    if (!userRetakes[responseData.userEmail][responseData.sessionId]) {
-      userRetakes[responseData.userEmail][responseData.sessionId] = {
-        attempts: 0,
-        cooldownUntil: new Date(Date.now() + 30 * 60 * 1000).toISOString(), // 30 minutes from now
-        canRetake: false
+    const newResponse = {
+      id: `response-${Date.now()}`,
+      ...responseData,
+      completedAt: responseData.completedAt || new Date().toISOString()
+    }
+
+    // Insert into PostgreSQL database
+    await pool.query(`
+      INSERT INTO "QuizResponse" (id, "sessionId", "userId", answers, score, "timeSpent", "completedAt")
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `, [
+      newResponse.id,
+      newResponse.sessionId,
+      userId,
+      JSON.stringify(newResponse.answers || {}),
+      newResponse.score,
+      newResponse.timeSpent,
+      newResponse.completedAt
+    ])
+
+    // Check if this is a low score that needs retake cooldown
+    if (responseData.score < 45) {
+      // Start retake cooldown immediately for warning zone scores
+      if (!userRetakes[responseData.userEmail]) {
+        userRetakes[responseData.userEmail] = {}
+      }
+
+      if (!userRetakes[responseData.userEmail][responseData.sessionId]) {
+        userRetakes[responseData.userEmail][responseData.sessionId] = {
+          attempts: 1,
+          cooldownUntil: new Date(Date.now() + 30 * 60 * 1000).toISOString(), // 30 minutes from now
+          retakeWindowStart: null,
+          retakeWindowEnd: null,
+          canRetake: false,
+          passed: false,
+          finalScore: responseData.score
+        }
+      } else {
+        // If they already have retake data, increment attempts if not passed
+        const retakeData = userRetakes[responseData.userEmail][responseData.sessionId]
+        if (!retakeData.passed) {
+          retakeData.attempts += 1
+          retakeData.finalScore = responseData.score
+          // After first retake failure, start 30-min cooldown then 2-hour window
+          if (retakeData.attempts <= 2) {
+            retakeData.cooldownUntil = new Date(Date.now() + 30 * 60 * 1000).toISOString()
+            retakeData.canRetake = false
+            retakeData.retakeWindowStart = null
+            retakeData.retakeWindowEnd = null
+          }
+        }
       }
     } else {
-      // If they already have retake data, update cooldown if not already set
-      const retakeData = userRetakes[responseData.userEmail][responseData.sessionId]
-      if (!retakeData.cooldownUntil) {
-        retakeData.cooldownUntil = new Date(Date.now() + 30 * 60 * 1000).toISOString()
+      // Score >= 45 - user passed! Update retake data
+      if (userRetakes[responseData.userEmail] && userRetakes[responseData.userEmail][responseData.sessionId]) {
+        const retakeData = userRetakes[responseData.userEmail][responseData.sessionId]
+        retakeData.passed = true
         retakeData.canRetake = false
+        retakeData.cooldownUntil = null
+        retakeData.finalScore = responseData.score
+        retakeData.retakeWindowEnd = new Date().toISOString() // Close window
       }
     }
-  }
 
-  // Update the response count for the session
-  const sessionIndex = mockSessions.findIndex(s => s.id === newResponse.sessionId)
-  if (sessionIndex !== -1) {
-    const sessionResponseCount = mockResponses.filter(r => r.sessionId === newResponse.sessionId).length
-    mockSessions[sessionIndex]._count.responses = sessionResponseCount
+    res.status(201).json(newResponse)
+  } catch (err) {
+    console.error('Error creating response:', err)
+    res.status(500).json({ error: 'Failed to submit response' })
   }
+})
 
-  res.status(201).json(newResponse)
+// GET /api/user/:email/profile - Get user profile
+app.get('/api/user/:email/profile', authenticateToken, async (req, res) => {
+  const { email } = req.params
+
+  try {
+    // Users can only view their own profile, or admins can view any profile
+    console.log('Profile access check:', { userEmail: req.user.email, requestedEmail: email, isAdmin: req.user.isAdmin })
+    if (req.user.email !== email && !req.user.isAdmin) {
+      return res.status(403).json({ error: 'Access denied' })
+    }
+
+    let userProfile = null
+
+    if (usePostgres) {
+      const result = await pool.query(`
+        SELECT id, email, department, "isAdmin", "darkMode", "profileImage", "displayName", "lastPasswordChange", "createdAt"
+        FROM "User"
+        WHERE email = $1
+      `, [email])
+
+      if (result.rows.length > 0) {
+        const row = result.rows[0]
+        userProfile = {
+          id: row.id,
+          email: row.email,
+          department: row.department,
+          isAdmin: Boolean(row.isAdmin),
+          darkMode: Boolean(row.darkMode),
+          profileImage: row.profileImage,
+          displayName: row.displayName,
+          lastPasswordChange: row.lastPasswordChange,
+          createdAt: row.createdAt
+        }
+      }
+    } else {
+      userProfile = await new Promise((resolve, reject) => {
+        db.get(`
+          SELECT id, email, department, isAdmin, darkMode, profileImage, displayName, lastPasswordChange, createdAt
+          FROM User
+          WHERE email = ?
+        `, [email], (err, row) => {
+          if (err) {
+            reject(err)
+          } else {
+            if (row) {
+              resolve({
+                id: row.id,
+                email: row.email,
+                department: row.department,
+                isAdmin: Boolean(row.isAdmin),
+                darkMode: Boolean(row.darkMode),
+                profileImage: row.profileImage,
+                displayName: row.displayName,
+                lastPasswordChange: row.lastPasswordChange,
+                createdAt: row.createdAt
+              })
+            } else {
+              resolve(null)
+            }
+          }
+        })
+      })
+    }
+
+    if (!userProfile) {
+      return res.status(404).json({ error: 'User not found' })
+    }
+
+    res.json(userProfile)
+  } catch (error) {
+    console.error('Error fetching user profile:', error)
+    res.status(500).json({ error: 'Failed to fetch user profile' })
+  }
+})
+
+// PATCH /api/user/:email/profile - Update user profile
+app.patch('/api/user/:email/profile', authenticateToken, async (req, res) => {
+  const { email } = req.params
+  const { darkMode, profileImage, displayName } = req.body
+
+  try {
+    // Users can only update their own profile, or admins can update any profile
+    if (req.user.email !== email && !req.user.isAdmin) {
+      return res.status(403).json({ error: 'Access denied' })
+    }
+
+    const updates = []
+    const values = []
+    let paramCount = 1
+
+    if (darkMode !== undefined) {
+      updates.push(`"darkMode" = $${paramCount++}`)
+      values.push(darkMode)
+    }
+
+    if (profileImage !== undefined) {
+      updates.push(`"profileImage" = $${paramCount++}`)
+      values.push(profileImage)
+    }
+
+    if (displayName !== undefined) {
+      updates.push(`"displayName" = $${paramCount++}`)
+      values.push(displayName)
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'No updates provided' })
+    }
+
+    let result
+    // Use direct string interpolation for email to avoid type issues
+    result = await pool.query(`
+      UPDATE "User"
+      SET ${updates.join(', ')}
+      WHERE email = '${email}'
+      RETURNING id, email, department, "isAdmin", "darkMode", "profileImage", "displayName", "lastPasswordChange", "createdAt"
+    `, values)
+
+    if (!result.rows || result.rows.length === 0 || !result.rows[0]) {
+      return res.status(404).json({ error: 'User not found' })
+    }
+
+    const updatedUser = result.rows[0]
+    const userProfile = {
+      id: updatedUser.id,
+      email: updatedUser.email,
+      department: updatedUser.department,
+      isAdmin: Boolean(updatedUser.isAdmin),
+      darkMode: Boolean(updatedUser.darkMode),
+      profileImage: updatedUser.profileImage,
+      displayName: updatedUser.displayName,
+      lastPasswordChange: updatedUser.lastPasswordChange,
+      createdAt: updatedUser.createdAt
+    }
+
+    // Update in-memory credentials
+    if (userCredentials[email]) {
+      if (darkMode !== undefined) userCredentials[email].darkMode = darkMode
+      if (profileImage !== undefined) userCredentials[email].profileImage = profileImage
+      if (displayName !== undefined) userCredentials[email].displayName = displayName
+    }
+
+    res.json({ message: 'Profile updated successfully', profile: userProfile })
+  } catch (error) {
+    console.error('Error updating user profile:', error)
+    res.status(500).json({ error: 'Failed to update user profile' })
+  }
+})
+
+// PATCH /api/user/:email/password - Change user password
+app.patch('/api/user/:email/password', authenticateToken, async (req, res) => {
+  const { email } = req.params
+  const { currentPassword, newPassword } = req.body
+
+  try {
+    // Users can only change their own password, or admins can change any password
+    if (req.user.email !== email && !req.user.isAdmin) {
+      return res.status(403).json({ error: 'Access denied' })
+    }
+
+    if (!newPassword) {
+      return res.status(400).json({ error: 'New password is required' })
+    }
+
+    // For admin password changes, skip current password verification
+    if (req.user.email === email) {
+      // Regular user changing their own password - verify current password
+      const user = userCredentials[email]
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' })
+      }
+
+      const isValidPassword = await bcrypt.compare(currentPassword, user.password)
+      if (!isValidPassword) {
+        return res.status(400).json({ error: 'Current password is incorrect' })
+      }
+    }
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10)
+
+    // Update password in database
+    await pool.query(`
+      UPDATE "User"
+      SET password = $1, "lastPasswordChange" = $2
+      WHERE email = $3
+    `, [hashedPassword, new Date().toISOString(), email])
+
+    // Update in-memory credentials
+    if (userCredentials[email]) {
+      userCredentials[email].password = hashedPassword
+    }
+
+    // Log audit action
+    await logAuditAction(
+      req.user.email,
+      'change_password',
+      {
+        changedUser: email,
+        adminChange: req.user.email !== email
+      },
+      req
+    )
+
+    res.json({ message: 'Password changed successfully' })
+  } catch (error) {
+    console.error('Error changing password:', error)
+    res.status(500).json({ error: 'Failed to change password' })
+  }
+})
+
+// PATCH /api/user/:email/promote - Promote user to admin (enhanced)
+app.patch('/api/user/:email/promote', authenticateToken, async (req, res) => {
+  const { email } = req.params
+  const { reason } = req.body
+
+  try {
+    // Only admins can promote users
+    if (!req.user.isAdmin) {
+      return res.status(403).json({ error: 'Admin access required' })
+    }
+
+    if (!userCredentials[email]) {
+      return res.status(404).json({ error: 'User not found' })
+    }
+
+    // Prevent promoting existing admins
+    if (userCredentials[email].isAdmin) {
+      return res.status(400).json({ error: 'User is already an administrator' })
+    }
+
+    // Update in database
+    await pool.query(`
+      UPDATE "User"
+      SET "isAdmin" = true
+      WHERE email = $1
+    `, [email])
+
+    // Update in-memory credentials
+    userCredentials[email].isAdmin = true
+
+    // Log audit action
+    await logAuditAction(
+      req.user.email,
+      'promote_user',
+      {
+        promotedUser: email,
+        reason: reason || 'Admin promotion',
+        previousRole: 'user',
+        newRole: 'admin'
+      },
+      req
+    )
+
+    res.json({
+      message: 'User promoted to administrator status successfully',
+      email: email,
+      isAdmin: true
+    })
+  } catch (error) {
+    console.error('Error promoting user:', error)
+    res.status(500).json({ error: 'Failed to promote user' })
+  }
+})
+
+// PATCH /api/user/:email/demote - Remove user from admin (demote)
+app.patch('/api/user/:email/demote', authenticateToken, async (req, res) => {
+  const { email } = req.params
+  const { reason } = req.body
+
+  try {
+    // Only admins can demote users
+    if (!req.user.isAdmin) {
+      return res.status(403).json({ error: 'Admin access required' })
+    }
+
+    // Prevent admin from demoting themselves
+    if (req.user.email === email) {
+      return res.status(400).json({ error: 'Cannot demote yourself' })
+    }
+
+    if (!userCredentials[email]) {
+      return res.status(404).json({ error: 'User not found' })
+    }
+
+    // Prevent demoting non-admins
+    if (!userCredentials[email].isAdmin) {
+      return res.status(400).json({ error: 'User is not an administrator' })
+    }
+
+    // Update in database
+    await pool.query(`
+      UPDATE "User"
+      SET "isAdmin" = false
+      WHERE email = $1
+    `, [email])
+
+    // Update in-memory credentials
+    userCredentials[email].isAdmin = false
+
+    // Log audit action
+    await logAuditAction(
+      req.user.email,
+      'demote_user',
+      {
+        demotedUser: email,
+        reason: reason || 'Admin demotion',
+        previousRole: 'admin',
+        newRole: 'user'
+      },
+      req
+    )
+
+    res.json({
+      message: 'User removed from administrator status successfully',
+      email: email,
+      isAdmin: false
+    })
+  } catch (error) {
+    console.error('Error demoting user:', error)
+    res.status(500).json({ error: 'Failed to demote user' })
+  }
 })
 
 // Initialize user credentials synchronously before starting server
@@ -1304,12 +2236,12 @@ const startServer = async () => {
     userCredentials = await initializeUserCredentials()
     console.log('User credentials initialized successfully')
 
-app.listen(PORT, () => {
-  console.log(`BDO Skills Pulse API server running on http://localhost:${PORT}`)
-  console.log('Note: Using mock data for demonstration purposes')
-  console.log('Admin accounts initialized with secure passwords')
-  console.log('Professional training effectiveness and competency validation platform')
-})
+    app.listen(PORT, () => {
+      console.log(`BDO Skills Pulse API server running on http://localhost:${PORT}`)
+      console.log('Note: Using mock data for demonstration purposes')
+      console.log('Admin accounts initialized with secure passwords')
+      console.log('Professional training effectiveness and competency validation platform')
+    })
   } catch (error) {
     console.error('Failed to initialize server:', error)
     process.exit(1)

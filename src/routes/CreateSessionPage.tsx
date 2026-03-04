@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Plus, Trash2, AlertCircle } from 'lucide-react'
 import Button from '../lib/components/Button'
 import Breadcrumb from '../lib/components/Breadcrumb'
+import { useAuth } from '../lib/contexts/AuthContext'
 
 interface Question {
   id: string
@@ -10,10 +11,12 @@ interface Question {
   options: string[]
   correctAnswer: number
   type: 'multiple-choice' | 'true-false'
+  correctAnswerReason: string
 }
 
 function CreateSessionPage() {
   const navigate = useNavigate()
+  const { accessToken, user } = useAuth()
   const [sessionName, setSessionName] = useState('')
   const [sessionDate, setSessionDate] = useState('')
   const [sessionTime, setSessionTime] = useState('')
@@ -24,7 +27,8 @@ function CreateSessionPage() {
       text: '',
       options: ['', '', '', ''],
       correctAnswer: 0,
-      type: 'multiple-choice'
+      type: 'multiple-choice',
+      correctAnswerReason: ''
     }
   ])
   const [loading, setLoading] = useState(false)
@@ -36,7 +40,8 @@ function CreateSessionPage() {
       text: '',
       options: ['', '', '', ''],
       correctAnswer: 0,
-      type: 'multiple-choice'
+      type: 'multiple-choice',
+      correctAnswerReason: ''
     }
     setQuestions([...questions, newQuestion])
   }
@@ -98,16 +103,18 @@ function CreateSessionPage() {
           text: q.text,
           options: q.options,
           correctAnswer: q.correctAnswer,
-          type: q.type
+          type: q.type,
+          correctAnswerReason: q.correctAnswerReason
         })),
-        createdBy: 'admin@bdo.co.zw', // This should come from auth context
+        createdBy: user?.email || 'admin@bdo.co.zw',
         isActive: false
       }
 
-      const response = await fetch('/api/sessions', {
+      const response = await fetch('http://localhost:3001/api/sessions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
         },
         body: JSON.stringify(sessionData),
       })
@@ -115,16 +122,17 @@ function CreateSessionPage() {
       if (response.ok) {
         // Send notifications to the target department
         try {
-          const notificationResponse = await fetch(`/api/department/${targetDepartment}/notifications`, {
+          const notificationResponse = await fetch(`http://localhost:3001/api/department/${targetDepartment}/notifications`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
+              'Authorization': `Bearer ${accessToken}`
             },
             body: JSON.stringify({
               type: 'quiz_posted',
               title: 'New Quiz Available',
               message: `${'ADMIN'} has posted a quiz for the ${targetDepartment === 'everyone' ? 'all departments' : targetDepartment + ' department'} to be completed within the stated time lines. please address this ticket.`,
-              adminEmail: 'admin@bdo.co.zw',
+              adminEmail: user?.email || 'admin@bdo.co.zw',
               quizName: sessionName
             })
           })
@@ -136,7 +144,7 @@ function CreateSessionPage() {
           console.error('Error sending notifications:', error)
         }
 
-        navigate('/admin')
+        navigate('/app/admin')
       } else {
         throw new Error('Failed to create session')
       }
@@ -152,14 +160,14 @@ function CreateSessionPage() {
     <div className="ui-page page-enter">
       {/* Breadcrumb */}
       <Breadcrumb items={[
-        { label: 'Dashboard', href: '/admin' },
+        { label: 'Dashboard', href: '/app/admin' },
         { label: 'Create Session' }
       ]} />
 
       {/* Header */}
       <div className="ui-page-header mb-6">
         <h1 className="ui-page-title">Create New Quiz Session</h1>
-        <Button variant="outline" onClick={() => navigate('/admin')}>
+        <Button variant="outline" onClick={() => navigate('/app/admin')}>
           Cancel
         </Button>
       </div>
@@ -204,6 +212,7 @@ function CreateSessionPage() {
               >
                 <option value="Tax">Tax Department</option>
                 <option value="Audit">Audit Department</option>
+                <option value="IT">IT Department</option>
                 <option value="everyone">Everyone (All Departments)</option>
               </select>
             </div>
@@ -313,6 +322,24 @@ function CreateSessionPage() {
                       Select the radio button next to the correct answer
                     </p>
                   </div>
+
+                  {/* Reason for correct answer */}
+                  <div>
+                    <label htmlFor={`reason-${question.id}`} className="ui-label">
+                      Reason for Correct Answer (shown to users during review)
+                    </label>
+                    <textarea
+                      id={`reason-${question.id}`}
+                      value={question.correctAnswerReason}
+                      onChange={(e) => updateQuestion(question.id, 'correctAnswerReason', e.target.value)}
+                      className="ui-field w-full"
+                      rows={2}
+                      placeholder="Explain why this answer is correct (e.g., 'Option D is correct because...')"
+                    />
+                    <p className="text-xs text-gray-500 mt-2">
+                      This explanation will be shown to users when they review their answers
+                    </p>
+                  </div>
                 </div>
               </div>
             ))}
@@ -324,7 +351,7 @@ function CreateSessionPage() {
           <Button
             type="button"
             variant="outline"
-            onClick={() => navigate('/admin')}
+            onClick={() => navigate('/app/admin')}
             disabled={loading}
             className="sm:order-1"
           >

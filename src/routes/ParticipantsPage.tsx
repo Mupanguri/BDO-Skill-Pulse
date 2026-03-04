@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Users, Award, TrendingUp, TrendingDown, Minus, Download, AlertTriangle, Eye, UserX, User, Search, X } from 'lucide-react'
+import { Users, Download, AlertTriangle, Eye, Search, X, Shield, UserMinus } from 'lucide-react'
 import Button from '../lib/components/Button'
 import Breadcrumb from '../lib/components/Breadcrumb'
 import LoadingSpinner from '../lib/components/LoadingSpinner'
@@ -9,6 +9,7 @@ import { useAuth } from '../lib/contexts/AuthContext'
 interface UserPerformance {
   email: string
   department: string
+  isAdmin: boolean
   quizzesTaken: number
   averageScore: number
   totalScore: number
@@ -90,7 +91,7 @@ function ParticipantsPage() {
               // Calculate trend (simplified - could be more sophisticated)
               const trend: UserPerformance['trend'] = submissions.length >= 2 ?
                 (submissions[submissions.length - 1].score > submissions[submissions.length - 2].score ? 'improving' :
-                 submissions[submissions.length - 1].score < submissions[submissions.length - 2].score ? 'declining' : 'stable') : 'stable'
+                  submissions[submissions.length - 1].score < submissions[submissions.length - 2].score ? 'declining' : 'stable') : 'stable'
 
               // Add session names to submissions
               const submissionsWithNames = submissions.map((sub: any) => {
@@ -104,6 +105,7 @@ function ParticipantsPage() {
               return {
                 email: user.email,
                 department: user.department,
+                isAdmin: user.isAdmin || false,
                 quizzesTaken: submissions.length,
                 averageScore,
                 totalScore,
@@ -226,6 +228,35 @@ function ParticipantsPage() {
     }
   }
 
+  const handleDemoteUser = async (userEmail: string) => {
+    if (!confirm(`Are you sure you want to remove ${userEmail} from administrator status?`)) {
+      return
+    }
+
+    try {
+      const response = await fetch(`http://localhost:3001/api/user/${userEmail}/demote`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({ reason: 'Admin demotion' })
+      })
+
+      if (response.ok) {
+        alert(`${userEmail} has been removed from administrator status`)
+        // Refresh the participants list to update the UI
+        fetchParticipants()
+      } else {
+        const error = await response.json()
+        alert(`Failed to demote user: ${error.error || 'Unknown error'}`)
+      }
+    } catch (error) {
+      console.error('Error demoting user:', error)
+      alert('Error demoting user')
+    }
+  }
+
   const exportToExcel = () => {
     // Simple CSV export for now (could be enhanced to actual Excel)
     const csvData = [
@@ -259,7 +290,7 @@ function ParticipantsPage() {
     <div className="ui-page page-enter">
       {/* Breadcrumb */}
       <Breadcrumb items={[
-        { label: 'Dashboard', href: '/admin' },
+        { label: 'Dashboard', href: '/app/admin' },
         { label: 'Participants' }
       ]} />
 
@@ -473,14 +504,24 @@ function ParticipantsPage() {
               <div>
                 <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">Admin Actions</h3>
                 <div className="flex flex-wrap gap-3">
-                  {!selectedUser.email.includes('admin') && (
+                  {!selectedUser.isAdmin ? (
                     <Button
                       size="sm"
                       variant="secondary"
                       onClick={() => handleElevateUser(selectedUser.email)}
                     >
-                      <User className="h-4 w-4 mr-2" aria-hidden="true" />
+                      <Shield className="h-4 w-4 mr-2" aria-hidden="true" />
                       Elevate to Admin
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleDemoteUser(selectedUser.email)}
+                      className="text-red-600 border-red-300 hover:bg-red-50"
+                    >
+                      <UserMinus className="h-4 w-4 mr-2" aria-hidden="true" />
+                      Remove Admin
                     </Button>
                   )}
                   {(selectedUser.grade === 'Warning' || selectedUser.grade === 'Fail') && (
