@@ -1,0 +1,6 @@
+{
+  "buildCommand": "npm ci",
+  "installCommand": "npm install",
+  "framework": null,
+  "outputDirectory": "dist"
+}
