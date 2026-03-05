@@ -1,6 +1,5 @@
 // Centralized API configuration
-// Use VITE_API_URL env var for external API (e.g., Render)
-// Fall back to empty string for same-domain deployment
+// Production URL: https://bdo-skill-pulse.onrender.com
 const API_BASE_URL = 'https://bdo-skill-pulse.onrender.com';
 
 // Use this to prevent Vite from optimizing away the string
