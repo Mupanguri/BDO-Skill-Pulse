@@ -16,10 +16,9 @@ interface Question {
 
 function CreateSessionPage() {
   const navigate = useNavigate()
-  const { accessToken, user } = useAuth()
+  const { user } = useAuth()
   const [sessionName, setSessionName] = useState('')
   const [sessionDate, setSessionDate] = useState('')
-  const [sessionTime, setSessionTime] = useState('')
   const [targetDepartment, setTargetDepartment] = useState('Tax')
   const [questions, setQuestions] = useState<Question[]>([
     {
@@ -31,6 +30,7 @@ function CreateSessionPage() {
       correctAnswerReason: ''
     }
   ])
+  const [timeLimitMinutes, setTimeLimitMinutes] = useState(30)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -73,7 +73,7 @@ function CreateSessionPage() {
 
     try {
       // Validate form
-      if (!sessionName.trim() || !sessionDate || !sessionTime) {
+      if (!sessionName.trim() || !sessionDate) {
         setError('Please fill in all session details')
         setLoading(false)
         return
@@ -95,8 +95,8 @@ function CreateSessionPage() {
 
       const sessionData = {
         name: sessionName,
-        date: new Date(`${sessionDate}T${sessionTime}`).toISOString(),
-        time: sessionTime,
+        date: new Date(sessionDate).toISOString(),
+        time: '',
         department: targetDepartment,
         questions: questions.map(q => ({
           id: q.id,
@@ -106,44 +106,19 @@ function CreateSessionPage() {
           type: q.type,
           correctAnswerReason: q.correctAnswerReason
         })),
+        timeLimitMinutes,
         createdBy: user?.email || 'admin@bdo.co.zw',
         isActive: false
       }
 
       const response = await fetch('/api/sessions', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
-        },
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(sessionData),
       })
 
       if (response.ok) {
-        // Send notifications to the target department
-        try {
-          const notificationResponse = await fetch(`/api/department/${targetDepartment}/notifications`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${accessToken}`
-            },
-            body: JSON.stringify({
-              type: 'quiz_posted',
-              title: 'New Quiz Available',
-              message: `${'ADMIN'} has posted a quiz for the ${targetDepartment === 'everyone' ? 'all departments' : targetDepartment + ' department'} to be completed within the stated time lines. please address this ticket.`,
-              adminEmail: user?.email || 'admin@bdo.co.zw',
-              quizName: sessionName
-            })
-          })
-
-          if (!notificationResponse.ok) {
-            console.error('Failed to send notifications')
-          }
-        } catch (error) {
-          console.error('Error sending notifications:', error)
-        }
-
         navigate('/app/admin')
       } else {
         throw new Error('Failed to create session')
@@ -210,9 +185,13 @@ function CreateSessionPage() {
                 className="ui-field w-full"
                 required
               >
-                <option value="Tax">Tax Department</option>
-                <option value="Audit">Audit Department</option>
-                <option value="IT">IT Department</option>
+                <option value="Tax">Tax</option>
+                <option value="Information Technology">Information Technology</option>
+                <option value="Audit">Audit</option>
+                <option value="Accounting Risk Advisory">Accounting Risk Advisory</option>
+                <option value="Corporate Finance">Corporate Finance</option>
+                <option value="Business Development">Business Development</option>
+                <option value="Human Resources">Human Resources</option>
                 <option value="everyone">Everyone (All Departments)</option>
               </select>
             </div>
@@ -230,17 +209,20 @@ function CreateSessionPage() {
               />
             </div>
             <div>
-              <label htmlFor="session-time" className="ui-label">
-                Time
+              <label htmlFor="time-limit" className="ui-label">
+                Time Limit (minutes)
               </label>
               <input
-                id="session-time"
-                type="time"
-                value={sessionTime}
-                onChange={(e) => setSessionTime(e.target.value)}
+                id="time-limit"
+                type="number"
+                min={5}
+                max={180}
+                value={timeLimitMinutes}
+                onChange={(e) => setTimeLimitMinutes(Math.max(5, Math.min(180, Number(e.target.value))))}
                 className="ui-field w-full"
                 required
               />
+              <p className="text-xs text-gray-500 mt-1">How long participants have to complete the quiz (5–180 min)</p>
             </div>
           </div>
         </div>
@@ -367,6 +349,7 @@ function CreateSessionPage() {
           </Button>
         </div>
       </form>
+
     </div>
   )
 }

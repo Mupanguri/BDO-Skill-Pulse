@@ -8,7 +8,7 @@ function RegisterPage() {
     email: '',
     password: '',
     confirmPassword: '',
-    department: 'Tax'
+    department: 'Tax'  // first in the official list
   })
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
@@ -17,15 +17,23 @@ function RegisterPage() {
   const [success, setSuccess] = useState('')
   const navigate = useNavigate()
 
-  const departments = ['Tax', 'Audit', 'IT', 'Consulting', 'Assurance']
+  const departments = [
+    'Tax',
+    'Information Technology',
+    'Audit',
+    'Accounting Risk Advisory',
+    'Corporate Finance',
+    'Business Development',
+    'Human Resources'
+  ]
 
-  // Password validation requirements
+  // Password validation requirements — must match backend regex
   const passwordRequirements = [
     { test: (pwd: string) => pwd.length >= 8, label: 'At least 8 characters' },
     { test: (pwd: string) => /[A-Z]/.test(pwd), label: 'One uppercase letter' },
     { test: (pwd: string) => /[a-z]/.test(pwd), label: 'One lowercase letter' },
     { test: (pwd: string) => /\d/.test(pwd), label: 'One number' },
-    { test: (pwd: string) => /[!@#$%^&*(),.?":{}|<>]/.test(pwd), label: 'One special character' }
+    { test: (pwd: string) => /[@$!%*?&()#^]/.test(pwd), label: 'One special character (@$!%*?&()#^)' }
   ]
 
   const validateEmail = (email: string) => {
@@ -92,6 +100,9 @@ function RegisterPage() {
         setTimeout(() => {
           navigate('/login')
         }, 2000)
+      } else if (response.status === 409 && data.useOtp) {
+        // Pre-seeded account — redirect to login so they can use email code
+        navigate('/login', { state: { email: formData.email, preSeeded: true } })
       } else {
         setError(data.error || 'Registration failed')
       }

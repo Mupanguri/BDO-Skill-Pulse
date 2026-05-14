@@ -1,10 +1,19 @@
 import express from 'express'
 import cors from 'cors'
+import helmet from 'helmet'
+import rateLimit from 'express-rate-limit'
+import cookieParser from 'cookie-parser'
+import { doubleCsrf } from 'csrf-csrf'
 import bcrypt from 'bcrypt'
 import jwt from 'jsonwebtoken'
 import crypto from 'crypto'
 import { createRequire } from 'module'
 import logger from './src/lib/utils/logger.js'
+import { PrismaClient } from '@prisma/client'
+
+const prisma = new PrismaClient({
+  datasources: { db: { url: process.env.DATABASE_URL } }
+})
 
 const app = express()
 const PORT = process.env.PORT || 3001
@@ -27,9 +36,7 @@ const connectToDatabase = async () => {
     // For production (Supabase), configure SSL properly
     if (process.env.NODE_ENV === 'production') {
       connectionOptions.ssl = {
-        rejectUnauthorized: false,
-        // Supabase uses self-signed certificates
-        ca: undefined,
+        rejectUnauthorized: true,
         servername: 'db.gcqocoyqmzwzkfpehbju.supabase.co'
       }
     } else {
@@ -88,7 +95,19 @@ const logToFile = (filePath, message) => {
   }
 }
 
+// Standardised error response helper
+const sendError = (res, status, message, code = null) =>
+  res.status(status).json({ error: message, ...(code ? { code } : {}) })
+
 // Comprehensive request logging middleware
+const SENSITIVE_FIELDS = ['password', 'newPassword', 'oldPassword', 'currentPassword', 'confirmPassword', 'token', 'refreshToken', 'accessToken']
+const sanitizeBody = (body) => {
+  if (!body || typeof body !== 'object') return body
+  const sanitized = { ...body }
+  SENSITIVE_FIELDS.forEach(key => { if (sanitized[key] !== undefined) sanitized[key] = '[REDACTED]' })
+  return sanitized
+}
+
 const logRequest = (req, res, next) => {
   const startTime = Date.now()
   const timestamp = new Date().toISOString()
@@ -109,7 +128,7 @@ const logRequest = (req, res, next) => {
       'x-forwarded-for': req.get('X-Forwarded-For') || 'None',
       'x-real-ip': req.get('X-Real-IP') || 'None'
     },
-    body: req.body || {},
+    body: sanitizeBody(req.body),
     query: req.query || {},
     params: req.params || {}
   }
@@ -187,13 +206,13 @@ const logRequest = (req, res, next) => {
 }
 
 // System health monitoring
-const logSystemHealth = () => {
+const logSystemHealth = async () => {
   const healthData = {
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     memory: process.memoryUsage(),
     cpu: process.cpuUsage(),
-    activeConnections: userSessions.length,
+    activeConnections: await prisma.userSession.count().catch(() => 0),
     activeUsers: Object.keys(userCredentials).length,
     databaseStatus: 'PostgreSQL Connected'
   }
@@ -202,11 +221,22 @@ const logSystemHealth = () => {
 }
 
 // JWT Configuration
-const JWT_SECRET = process.env.JWT_SECRET || 'bdo-quiz-system-secret-key-change-in-production'
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'bdo-quiz-refresh-secret-key-change-in-production'
-const JWT_EXPIRES_IN = '1h' // 1 hour for access token
-const JWT_REFRESH_EXPIRES_IN = '7d' // 7 days for refresh token
-const SESSION_TIMEOUT = 60 * 60 * 1000 // 60 minutes (1 hour) in milliseconds
+if (!process.env.JWT_SECRET || !process.env.JWT_REFRESH_SECRET) {
+  console.error('FATAL: JWT_SECRET and JWT_REFRESH_SECRET must be set as environment variables.')
+  console.error('Generate with: node -e "console.log(require(\'crypto\').randomBytes(64).toString(\'hex\'))"')
+  process.exit(1)
+}
+const JWT_SECRET = process.env.JWT_SECRET
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET
+const ONE_MINUTE_MS = 60 * 1000
+const ONE_DAY_MS = 24 * 60 * ONE_MINUTE_MS
+const JWT_EXPIRES_IN = '1h'
+const JWT_REFRESH_EXPIRES_IN = '7d'
+const SESSION_TIMEOUT = 60 * ONE_MINUTE_MS
+const ACCESS_TOKEN_TTL_MS = 15 * ONE_MINUTE_MS
+const REFRESH_TOKEN_TTL_MS = 7 * ONE_DAY_MS
+const RETAKE_COOLDOWN_MS = 30 * ONE_MINUTE_MS
+const RETAKE_WINDOW_MS = 2 * 60 * ONE_MINUTE_MS
 
 // Log system startup
 logToFile(LOG_FILE, `SYSTEM_STARTUP: BDO Skills Pulse API server starting on http://localhost:${PORT}`)
@@ -235,9 +265,58 @@ const corsOptions = {
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"], // Tailwind requires unsafe-inline
+      imgSrc: ["'self'", 'data:', 'blob:'],
+      connectSrc: ["'self'"],
+    }
+  }
+}))
 app.use(cors(corsOptions))
-app.use(express.json({ limit: '10mb' }))
+app.use(cookieParser())
+app.use(express.json({ limit: '100kb' }))
 app.use(logRequest) // Add comprehensive logging middleware
+
+// Rate limiters
+const authLimiter = rateLimit({
+  windowMs: 15 * ONE_MINUTE_MS,
+  max: 10,
+  message: { error: 'Too many attempts, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+})
+const registerLimiter = rateLimit({
+  windowMs: 60 * ONE_MINUTE_MS,
+  max: 5,
+  message: { error: 'Too many registrations from this IP.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+})
+const resetLimiter = rateLimit({
+  windowMs: 60 * ONE_MINUTE_MS,
+  max: 5,
+  message: { error: 'Too many reset requests from this IP.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+})
+
+// CSRF protection using double-submit cookie pattern
+// Only enforced once cookies are the primary auth mechanism (CSRF_ENABLED=true)
+let doubleCsrfProtection = null
+if (process.env.CSRF_ENABLED === 'true') {
+  if (!process.env.CSRF_SECRET) {
+    console.error('FATAL: CSRF_SECRET must be set when CSRF_ENABLED=true')
+    process.exit(1)
+  }
+  const csrf = doubleCsrf({ getSecret: () => process.env.CSRF_SECRET, cookieName: 'x-csrf-token' })
+  doubleCsrfProtection = csrf.doubleCsrfProtection
+  app.use(doubleCsrfProtection)
+  logger.info('CSRF protection enabled')
+}
 
 // Initialize user credentials from database
 const initializeUserCredentials = async () => {
@@ -257,7 +336,7 @@ const initializeUserCredentials = async () => {
       }
     }
 
-    console.log(`Loaded ${result.rows.length} users from PostgreSQL database`)
+
     return credentials
   } catch (err) {
     console.error('Error loading users from database:', err)
@@ -268,14 +347,7 @@ const initializeUserCredentials = async () => {
 // Global user credentials (will be initialized on server start)
 let userCredentials = {}
 
-// User warnings tracking
-let userWarnings = {}
-
-// User retake tracking
-let userRetakes = {}
-
-// User notifications
-let userNotifications = {}
+// Warnings, retakes, and notifications are persisted via Prisma (UserWarning, UserRetake, UserNotification tables)
 
 // Database queries for sessions and responses
 const getSessionsFromDB = async () => {
@@ -343,7 +415,7 @@ const getResponsesFromDB = async () => {
       const result = await pool.query(`
         SELECT r.*, u.email, u.department
         FROM "QuizResponse" r
-        JOIN "User" u ON r."userId" = u.id
+        LEFT JOIN "User" u ON r."userId" = u.id
         ORDER BY r."completedAt" DESC
       `)
 
@@ -353,10 +425,10 @@ const getResponsesFromDB = async () => {
         score: row.score,
         timeSpent: row.timeSpent,
         completedAt: row.completedAt,
-        user: {
+        user: row.email ? {
           email: row.email,
           department: row.department
-        }
+        } : null
       }))
 
       return responses
@@ -410,8 +482,8 @@ const generateTokens = (user) => {
 
 // Middleware to verify JWT token (in-memory)
 const authenticateToken = async (req, res, next) => {
-  const authHeader = req.headers['authorization']
-  const token = authHeader && authHeader.split(' ')[1] // Bearer TOKEN
+  // Accept token from httpOnly cookie OR Authorization header (for backward compatibility)
+  const token = req.cookies?.accessToken || (req.headers['authorization']?.split(' ')[1])
 
   if (!token) {
     return res.status(401).json({ error: 'Access token required' })
@@ -419,7 +491,6 @@ const authenticateToken = async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET)
-    console.log('Token decoded:', JSON.stringify(decoded))
     req.user = decoded
     next()
   } catch (error) {
@@ -429,6 +500,16 @@ const authenticateToken = async (req, res, next) => {
     return res.status(403).json({ error: 'Invalid token' })
   }
 }
+
+// Health check endpoint (no auth required — used by Render and uptime monitors)
+app.get('/health', async (req, res) => {
+  try {
+    await pool.query('SELECT 1')
+    res.json({ status: 'ok', db: 'connected', timestamp: new Date().toISOString() })
+  } catch {
+    res.status(503).json({ status: 'error', db: 'disconnected', timestamp: new Date().toISOString() })
+  }
+})
 
 // API Routes
 
@@ -506,14 +587,14 @@ app.get('/api/sessions', async (req, res) => {
 // GET /api/sessions/:id - Get a specific session with responses
 app.get('/api/sessions/:id', async (req, res) => {
   try {
-    console.log('Fetching session with id:', req.params.id)
+
     const sessions = await getSessionsFromDB()
     const responses = await getResponsesFromDB()
 
-    console.log('Available sessions:', sessions.map(s => s.id))
+
     const session = sessions.find(s => s.id === req.params.id)
     if (!session) {
-      console.log('Session not found:', req.params.id)
+
       return res.status(404).json({ error: 'Session not found' })
     }
 
@@ -632,8 +713,8 @@ app.post('/api/sessions', authenticateToken, async (req, res) => {
 
 // PATCH /api/sessions/:id - Update session (e.g., activate/deactivate)
 app.patch('/api/sessions/:id', authenticateToken, async (req, res) => {
-  console.log(`PATCH /api/sessions/${req.params.id} received`)
-  console.log('Request body:', req.body)
+
+
 
   const { isActive } = req.body
 
@@ -672,11 +753,11 @@ app.patch('/api/sessions/:id', authenticateToken, async (req, res) => {
     }
 
     if (!result.rows || result.rows.length === 0) {
-      console.log('Session not found')
+
       return res.status(404).json({ error: 'Session not found' })
     }
 
-    console.log('Session updated successfully')
+
     res.json({
       message: 'Session updated successfully',
       id: req.params.id,
@@ -727,10 +808,15 @@ app.get('/api/user/:email/session/:sessionId/submission', async (req, res) => {
 })
 
 // GET /api/user/:email/warnings - Get user's warning status
-app.get('/api/user/:email/warnings', (req, res) => {
+app.get('/api/user/:email/warnings', async (req, res) => {
   const { email } = req.params
-  const warnings = userWarnings[email] || []
-  res.json({ warnings })
+  try {
+    const warnings = await prisma.userWarning.findMany({ where: { userEmail: email }, orderBy: { timestamp: 'desc' } })
+    res.json({ warnings })
+  } catch (error) {
+    console.error('Error fetching warnings:', error)
+    res.status(500).json({ error: 'Failed to fetch warnings' })
+  }
 })
 
 // POST /api/user/:email/warn - Add warning to user
@@ -738,73 +824,55 @@ app.post('/api/user/:email/warn', authenticateToken, async (req, res) => {
   const { email } = req.params
   const { reason, adminEmail, quizName } = req.body
 
-  if (!userCredentials[email]) {
+  const userExists = await pool.query('SELECT email FROM "User" WHERE email = $1', [email])
+  if (!userExists.rows.length) {
     return res.status(404).json({ error: 'User not found' })
   }
 
-  if (!userWarnings[email]) {
-    userWarnings[email] = []
-  }
-
-  const warning = {
-    id: `warning-${Date.now()}`,
-    reason: reason || 'Performance flagged - improvement needed',
-    adminEmail: adminEmail,
-    timestamp: new Date().toISOString(),
-    acknowledged: false
-  }
-
-  userWarnings[email].push(warning)
-
-  // Log audit action
-  await logAuditAction(
-    req.user.email,
-    'warn_user',
-    {
-      warnedUser: email,
-      reason: reason,
-      quizName: quizName
-    },
-    req
-  )
-
-  // Create notification for the user
-  const adminName = adminEmail.split('@')[0].replace('.', ' ').toUpperCase()
-  const notificationMessage = `${adminName} has raised a flag for your performance in ${quizName || 'a quiz'} and requests you improve in your performance as this will affect your overall weight your self development performance key indicator.`
-
-  // Send notification to the user
-  fetch(`http://localhost:3001/api/user/${email}/notifications`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      type: 'warning',
-      title: 'Performance Warning',
-      message: notificationMessage,
-      adminEmail: adminEmail,
-      quizName: quizName
+  try {
+    const warning = await prisma.userWarning.create({
+      data: {
+        userEmail: email,
+        reason: reason || 'Performance flagged - improvement needed',
+        adminEmail: adminEmail,
+        quizName: quizName || null
+      }
     })
-  }).catch(err => console.error('Failed to send warning notification:', err))
 
-  res.status(201).json({ message: 'Warning added successfully', warning })
+    await logAuditAction(req.user.email, 'warn_user', { warnedUser: email, reason, quizName }, req)
+
+    const adminName = adminEmail.split('@')[0].replace('.', ' ').toUpperCase()
+    const notificationMessage = `${adminName} has raised a flag for your performance in ${quizName || 'a quiz'} and requests you improve in your performance as this will affect your overall weight your self development performance key indicator.`
+
+    await prisma.userNotification.create({
+      data: {
+        userEmail: email,
+        type: 'warning',
+        title: 'Performance Warning',
+        message: notificationMessage,
+        adminEmail: adminEmail,
+        quizName: quizName || null
+      }
+    })
+
+    res.status(201).json({ message: 'Warning added successfully', warning })
+  } catch (error) {
+    console.error('Failed to add warning:', error)
+    res.status(500).json({ error: 'Failed to add warning' })
+  }
 })
 
 // DELETE /api/user/:email/warnings/:warningId - Remove warning from user
-app.delete('/api/user/:email/warnings/:warningId', (req, res) => {
-  const { email, warningId } = req.params
-
-  if (!userWarnings[email]) {
-    return res.status(404).json({ error: 'No warnings found for user' })
+app.delete('/api/user/:email/warnings/:warningId', async (req, res) => {
+  const { warningId } = req.params
+  try {
+    await prisma.userWarning.delete({ where: { id: warningId } })
+    res.json({ message: 'Warning removed successfully' })
+  } catch (error) {
+    if (error.code === 'P2025') return res.status(404).json({ error: 'Warning not found' })
+    console.error('Failed to delete warning:', error)
+    res.status(500).json({ error: 'Failed to delete warning' })
   }
-
-  const warningIndex = userWarnings[email].findIndex(w => w.id === warningId)
-  if (warningIndex === -1) {
-    return res.status(404).json({ error: 'Warning not found' })
-  }
-
-  userWarnings[email].splice(warningIndex, 1)
-  res.json({ message: 'Warning removed successfully' })
 })
 
 // POST /api/user/:email/elevate - Elevate user to admin status
@@ -848,352 +916,256 @@ app.post('/api/user/:email/elevate', authenticateToken, async (req, res) => {
 })
 
 // GET /api/user/:email/session/:sessionId/retake-status - Get retake status for user session
-app.get('/api/user/:email/session/:sessionId/retake-status', (req, res) => {
+app.get('/api/user/:email/session/:sessionId/retake-status', async (req, res) => {
   const { email, sessionId } = req.params
-
-  if (!userRetakes[email]) {
-    userRetakes[email] = {}
-  }
-
-  if (!userRetakes[email][sessionId]) {
-    userRetakes[email][sessionId] = {
-      attempts: 0,
-      cooldownUntil: null,
-      retakeWindowStart: null,
-      retakeWindowEnd: null,
-      canRetake: false,
-      passed: false,
-      finalScore: null
-    }
-  }
-
-  const retakeStatus = userRetakes[email][sessionId]
   const now = Date.now()
+  try {
+    let retake = await prisma.userRetake.findUnique({
+      where: { userEmail_sessionId: { userEmail: email, sessionId } }
+    })
 
-  // Check if cooldown has expired and start retake window
-  if (retakeStatus.cooldownUntil) {
-    const cooldownEnd = new Date(retakeStatus.cooldownUntil).getTime()
-    if (now >= cooldownEnd && retakeStatus.attempts < 2) {
-      // Cooldown expired, start 2-hour retake window
-      retakeStatus.cooldownUntil = null
-      retakeStatus.retakeWindowStart = new Date().toISOString()
-      retakeStatus.retakeWindowEnd = new Date(now + 2 * 60 * 60 * 1000).toISOString() // 2 hours from now
-      retakeStatus.canRetake = true
+    if (!retake) {
+      return res.json({ attempts: 0, cooldownUntil: null, retakeWindowEnd: null, canRetake: false })
     }
-  }
 
-  // Check if retake window has expired
-  if (retakeStatus.retakeWindowEnd) {
-    const windowEnd = new Date(retakeStatus.retakeWindowEnd).getTime()
-    if (now >= windowEnd) {
-      // Retake window expired
-      retakeStatus.canRetake = false
-      retakeStatus.retakeWindowEnd = null
+    // Derive retake window end (2 hours after cooldown ends)
+    let retakeWindowEnd = retake.cooldownUntil
+      ? new Date(new Date(retake.cooldownUntil).getTime() + RETAKE_WINDOW_MS).toISOString()
+      : null
+
+    // If cooldown expired and we're within the 2-hour window, allow retake
+    if (retake.cooldownUntil && now >= new Date(retake.cooldownUntil).getTime() && retake.attempts < 2) {
+      if (now < new Date(retakeWindowEnd).getTime()) {
+        if (!retake.canRetake) {
+          retake = await prisma.userRetake.update({
+            where: { userEmail_sessionId: { userEmail: email, sessionId } },
+            data: { canRetake: true, cooldownUntil: null }
+          })
+          retakeWindowEnd = null
+        }
+      } else {
+        // Window expired
+        retake = await prisma.userRetake.update({
+          where: { userEmail_sessionId: { userEmail: email, sessionId } },
+          data: { canRetake: false, cooldownUntil: null }
+        })
+        retakeWindowEnd = null
+      }
     }
-  }
 
-  // Check if max attempts reached
-  if (retakeStatus.attempts >= 2) {
-    retakeStatus.canRetake = false
-    retakeStatus.cooldownUntil = null
-    retakeStatus.retakeWindowEnd = null
+    res.json({ ...retake, retakeWindowEnd })
+  } catch (error) {
+    console.error('Failed to get retake status:', error)
+    res.status(500).json({ error: 'Failed to get retake status' })
   }
-
-  res.json(retakeStatus)
 })
 
 // POST /api/user/:email/session/:sessionId/start-retake - Start retake cooldown
-app.post('/api/user/:email/session/:sessionId/start-retake', (req, res) => {
+app.post('/api/user/:email/session/:sessionId/start-retake', async (req, res) => {
   const { email, sessionId } = req.params
   const { score } = req.body
 
-  if (!userCredentials[email]) {
-    return res.status(404).json({ error: 'User not found' })
-  }
-
-  // Only allow retakes for scores below 45
   if (score >= 45) {
     return res.status(400).json({ error: 'Retakes only allowed for scores below 45' })
   }
 
-  if (!userRetakes[email]) {
-    userRetakes[email] = {}
-  }
+  try {
+    const existing = await prisma.userRetake.findUnique({
+      where: { userEmail_sessionId: { userEmail: email, sessionId } }
+    })
 
-  if (!userRetakes[email][sessionId]) {
-    userRetakes[email][sessionId] = {
-      attempts: 0,
-      cooldownUntil: null,
-      retakeWindowStart: null,
-      retakeWindowEnd: null,
-      canRetake: false,
-      passed: false,
-      finalScore: score
+    if (existing && existing.attempts >= 2) {
+      return res.status(400).json({ error: 'Maximum retake attempts (2) reached' })
     }
+
+    const cooldownEnd = new Date(Date.now() + RETAKE_COOLDOWN_MS)
+    const retake = await prisma.userRetake.upsert({
+      where: { userEmail_sessionId: { userEmail: email, sessionId } },
+      update: { cooldownUntil: cooldownEnd, canRetake: false, lastAttempt: new Date() },
+      create: { userEmail: email, sessionId, attempts: 0, cooldownUntil: cooldownEnd, canRetake: false, lastAttempt: new Date() }
+    })
+
+    res.json({
+      message: 'Retake cooldown started',
+      cooldownUntil: cooldownEnd.toISOString(),
+      attemptsRemaining: 2 - retake.attempts,
+      nextStatus: 'retake_window'
+    })
+  } catch (error) {
+    console.error('Failed to start retake:', error)
+    res.status(500).json({ error: 'Failed to start retake' })
   }
-
-  const retakeData = userRetakes[email][sessionId]
-
-  // Check if user already used their 2 retake attempts
-  if (retakeData.attempts >= 2) {
-    return res.status(400).json({ error: 'Maximum retake attempts (2) reached' })
-  }
-
-  // Start 30-minute cooldown
-  const cooldownEnd = new Date(Date.now() + 30 * 60 * 1000).toISOString() // 30 minutes from now
-
-  retakeData.cooldownUntil = cooldownEnd
-  retakeData.canRetake = false
-  retakeData.finalScore = score
-
-  res.json({
-    message: 'Retake cooldown started',
-    cooldownUntil: cooldownEnd,
-    attemptsRemaining: 2 - retakeData.attempts,
-    nextStatus: 'retake_window'
-  })
 })
 
 // POST /api/user/:email/session/:sessionId/complete-retake - Mark retake as completed
-app.post('/api/user/:email/session/:sessionId/complete-retake', (req, res) => {
+app.post('/api/user/:email/session/:sessionId/complete-retake', async (req, res) => {
   const { email, sessionId } = req.params
+  try {
+    const retake = await prisma.userRetake.findUnique({
+      where: { userEmail_sessionId: { userEmail: email, sessionId } }
+    })
+    if (!retake) return res.status(404).json({ error: 'No retake data found' })
 
-  if (!userRetakes[email] || !userRetakes[email][sessionId]) {
-    return res.status(404).json({ error: 'No retake data found' })
+    await prisma.userRetake.update({
+      where: { userEmail_sessionId: { userEmail: email, sessionId } },
+      data: { canRetake: false, cooldownUntil: null, attempts: { increment: 1 } }
+    })
+    res.json({ message: 'Retake marked as completed' })
+  } catch (error) {
+    console.error('Failed to complete retake:', error)
+    res.status(500).json({ error: 'Failed to complete retake' })
   }
-
-  const retakeData = userRetakes[email][sessionId]
-  retakeData.canRetake = false
-  retakeData.cooldownUntil = null
-
-  res.json({ message: 'Retake marked as completed' })
 })
 
 // GET /api/user/:email/notifications - Get user's notifications
-app.get('/api/user/:email/notifications', (req, res) => {
+app.get('/api/user/:email/notifications', async (req, res) => {
   const { email } = req.params
-  const notifications = userNotifications[email] || []
-  res.json({ notifications })
+  try {
+    const notifications = await prisma.userNotification.findMany({
+      where: { userEmail: email },
+      orderBy: { timestamp: 'desc' }
+    })
+    res.json({ notifications })
+  } catch (error) {
+    console.error('Failed to get notifications:', error)
+    res.status(500).json({ error: 'Failed to get notifications' })
+  }
 })
 
 // POST /api/user/:email/notifications - Create notification for user
-app.post('/api/user/:email/notifications', (req, res) => {
+app.post('/api/user/:email/notifications', async (req, res) => {
   const { email } = req.params
   const { type, title, message, adminEmail, quizName, departmentName } = req.body
 
-  if (!userCredentials[email]) {
+  const userExists = await pool.query('SELECT email FROM "User" WHERE email = $1', [email])
+  if (!userExists.rows.length) {
     return res.status(404).json({ error: 'User not found' })
   }
 
-  if (!userNotifications[email]) {
-    userNotifications[email] = []
+  try {
+    const notification = await prisma.userNotification.create({
+      data: { userEmail: email, type, title, message, adminEmail: adminEmail || null, quizName: quizName || null, departmentName: departmentName || null }
+    })
+    res.status(201).json({ message: 'Notification created successfully', notification })
+  } catch (error) {
+    console.error('Failed to create notification:', error)
+    res.status(500).json({ error: 'Failed to create notification' })
   }
-
-  const notification = {
-    id: `notification-${Date.now()}`,
-    type: type,
-    title: title,
-    message: message,
-    adminEmail: adminEmail,
-    quizName: quizName,
-    departmentName: departmentName,
-    timestamp: new Date().toISOString(),
-    read: false
-  }
-
-  userNotifications[email].push(notification)
-  res.status(201).json({ message: 'Notification created successfully', notification })
 })
 
 // POST /api/department/:department/notifications - Send notification to entire department
-app.post('/api/department/:department/notifications', (req, res) => {
+app.post('/api/department/:department/notifications', async (req, res) => {
   const { department } = req.params
   const { type, title, message, adminEmail, quizName } = req.body
 
-  const targetUsers = Object.keys(userCredentials).filter(email => {
-    if (department === 'everyone') return true
-    return userCredentials[email].department === department && !userCredentials[email].isAdmin
-  })
+  try {
+    const whereClause = department === 'everyone'
+      ? '"isAdmin" = false'
+      : `"department" = $1 AND "isAdmin" = false`
+    const params = department === 'everyone' ? [] : [department]
+    const usersResult = await pool.query(`SELECT email FROM "User" WHERE ${whereClause}`, params)
 
-  let createdCount = 0
-  targetUsers.forEach(email => {
-    if (!userNotifications[email]) {
-      userNotifications[email] = []
-    }
+    const deptName = department === 'everyone' ? 'All Departments' : department
+    const data = usersResult.rows.map(u => ({
+      userEmail: u.email, type, title, message,
+      adminEmail: adminEmail || null, quizName: quizName || null, departmentName: deptName
+    }))
 
-    const notification = {
-      id: `notification-${Date.now()}-${email}`,
-      type: type,
-      title: title,
-      message: message,
-      adminEmail: adminEmail,
-      quizName: quizName,
-      departmentName: department === 'everyone' ? 'All Departments' : department,
-      timestamp: new Date().toISOString(),
-      read: false
-    }
-
-    userNotifications[email].push(notification)
-    createdCount++
-  })
-
-  res.json({
-    message: `Notifications sent to ${createdCount} users in ${department === 'everyone' ? 'all departments' : department} department`,
-    count: createdCount
-  })
+    const result = await prisma.userNotification.createMany({ data })
+    res.json({ message: `Notifications sent to ${result.count} users in ${deptName} department`, count: result.count })
+  } catch (error) {
+    console.error('Failed to send department notifications:', error)
+    res.status(500).json({ error: 'Failed to send notifications' })
+  }
 })
 
 // PATCH /api/user/:email/notifications/:notificationId/read - Mark notification as read
-app.patch('/api/user/:email/notifications/:notificationId/read', (req, res) => {
-  const { email, notificationId } = req.params
-
-  if (!userNotifications[email]) {
-    return res.status(404).json({ error: 'No notifications found for user' })
+app.patch('/api/user/:email/notifications/:notificationId/read', async (req, res) => {
+  const { notificationId } = req.params
+  try {
+    await prisma.userNotification.update({ where: { id: notificationId }, data: { read: true } })
+    res.json({ message: 'Notification marked as read' })
+  } catch (error) {
+    if (error.code === 'P2025') return res.status(404).json({ error: 'Notification not found' })
+    console.error('Failed to mark notification as read:', error)
+    res.status(500).json({ error: 'Failed to update notification' })
   }
-
-  const notification = userNotifications[email].find(n => n.id === notificationId)
-  if (!notification) {
-    return res.status(404).json({ error: 'Notification not found' })
-  }
-
-  notification.read = true
-  res.json({ message: 'Notification marked as read' })
 })
 
-// Audit logging utility function (in-memory for demo)
-let auditLogs = []
+// Audit logging utility function - persists to AuditLog table
 const logAuditAction = async (adminEmail, action, details, req) => {
-  const logEntry = {
-    id: `audit-${Date.now()}`,
-    adminEmail,
-    action,
-    details: JSON.stringify(details || {}),
-    ipAddress: req?.ip || req?.connection?.remoteAddress || 'unknown',
-    userAgent: req?.headers['user-agent'] || 'unknown',
-    timestamp: new Date().toISOString()
+  try {
+    await prisma.auditLog.create({
+      data: {
+        adminEmail,
+        action,
+        details: JSON.stringify(details || {}),
+        ipAddress: req?.ip || req?.connection?.remoteAddress || 'unknown',
+        userAgent: req?.headers['user-agent'] || 'unknown'
+      }
+    })
+  } catch (err) {
+    logger.error('Failed to write audit log', err)
   }
-  auditLogs.push(logEntry)
 }
 
-// POST /api/feedback - Submit quiz feedback (in-memory)
-let quizFeedback = []
+// POST /api/feedback - Submit quiz feedback
 app.post('/api/feedback', async (req, res) => {
   const { userEmail, sessionId, rating, comments } = req.body
-
   try {
-    // Ensure quizFeedback is initialized
-    if (!quizFeedback || !Array.isArray(quizFeedback)) {
-      quizFeedback = []
-    }
-    
-    // Check if feedback already exists
-    const existingFeedback = quizFeedback.find(f => f.userEmail === userEmail && f.sessionId === sessionId)
+    const existing = await prisma.quizFeedback.findFirst({ where: { userEmail, sessionId } })
+    if (existing) return res.status(400).json({ error: 'Feedback already submitted for this quiz' })
 
-    if (existingFeedback) {
-      return res.status(400).json({ error: 'Feedback already submitted for this quiz' })
-    }
-
-    // Create new feedback
-    const feedback = {
-      id: `feedback-${Date.now()}`,
-      userEmail: userEmail,
-      sessionId: sessionId,
-      rating: rating,
-      comments: comments || null,
-      submittedAt: new Date().toISOString()
-    }
-
-    quizFeedback.push(feedback)
-
-    res.status(201).json({
-      message: 'Feedback submitted successfully',
-      feedback: feedback
+    const feedback = await prisma.quizFeedback.create({
+      data: { userEmail, sessionId, rating, comments: comments || null }
     })
-
+    res.status(201).json({ message: 'Feedback submitted successfully', feedback })
   } catch (error) {
     console.error('Failed to submit feedback:', error)
     res.status(500).json({ error: 'Failed to submit feedback' })
   }
 })
 
-// GET /api/feedback/check/:userEmail/:sessionId - Check if feedback was submitted (in-memory)
+// GET /api/feedback/check/:userEmail/:sessionId - Check if feedback was submitted
 app.get('/api/feedback/check/:userEmail/:sessionId', async (req, res) => {
   const { userEmail, sessionId } = req.params
-
   try {
-    // Ensure quizFeedback is initialized
-    if (!quizFeedback || !Array.isArray(quizFeedback)) {
-      quizFeedback = []
-    }
-    
-    const feedback = quizFeedback.find(f => f.userEmail === userEmail && f.sessionId === sessionId)
-
-    res.json({
-      hasFeedback: !!feedback,
-      feedback: feedback || null
-    })
-
+    const feedback = await prisma.quizFeedback.findFirst({ where: { userEmail, sessionId } })
+    res.json({ hasFeedback: !!feedback, feedback: feedback || null })
   } catch (error) {
     console.error('Failed to check feedback status:', error)
     res.status(500).json({ error: 'Failed to check feedback status' })
   }
 })
 
-// GET /api/feedback/admin - Get all feedback for admin (requires authentication) (in-memory)
+// GET /api/feedback/admin - Get all feedback for admin
 app.get('/api/feedback/admin', authenticateToken, async (req, res) => {
+  if (!req.user.isAdmin) return res.status(403).json({ error: 'Admin access required' })
   try {
-    // Check if user is admin
-    if (!req.user.isAdmin) {
-      return res.status(403).json({ error: 'Admin access required' })
-    }
-
-    // Ensure quizFeedback is initialized
-    if (!quizFeedback || !Array.isArray(quizFeedback)) {
-      quizFeedback = []
-    }
-
-    const feedback = quizFeedback.sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime())
-
+    const feedback = await prisma.quizFeedback.findMany({ orderBy: { submittedAt: 'desc' } })
     res.json({ feedback })
-
   } catch (error) {
     console.error('Failed to get admin feedback:', error)
     res.status(500).json({ error: 'Failed to get feedback' })
   }
 })
 
-// GET /api/feedback/stats - Get feedback statistics for admin (in-memory)
+// GET /api/feedback/stats - Get feedback statistics for admin
 app.get('/api/feedback/stats', authenticateToken, async (req, res) => {
+  if (!req.user.isAdmin) return res.status(403).json({ error: 'Admin access required' })
   try {
-    // Check if user is admin
-    if (!req.user.isAdmin) {
-      return res.status(403).json({ error: 'Admin access required' })
-    }
-
-    // Ensure quizFeedback is initialized
-    if (!quizFeedback || !Array.isArray(quizFeedback)) {
-      quizFeedback = []
-    }
-
-    const feedback = quizFeedback
-
-    const stats = {
-      totalFeedback: feedback.length,
-      averageRating: feedback.length > 0
-        ? Math.round((feedback.reduce((sum, f) => sum + f.rating, 0) / feedback.length) * 10) / 10
-        : 0,
-      ratingDistribution: {
-        1: feedback.filter(f => f.rating === 1).length,
-        2: feedback.filter(f => f.rating === 2).length,
-        3: feedback.filter(f => f.rating === 3).length,
-        4: feedback.filter(f => f.rating === 4).length,
-        5: feedback.filter(f => f.rating === 5).length
-      },
-      recentFeedback: feedback.slice(0, 5) // Last 5 feedback entries
-    }
-
-    res.json(stats)
-
+    const [total, avgResult, dist] = await Promise.all([
+      prisma.quizFeedback.count(),
+      prisma.quizFeedback.aggregate({ _avg: { rating: true } }),
+      Promise.all([1, 2, 3, 4, 5].map(r => prisma.quizFeedback.count({ where: { rating: r } })))
+    ])
+    const recent = await prisma.quizFeedback.findMany({ orderBy: { submittedAt: 'desc' }, take: 5 })
+    res.json({
+      totalFeedback: total,
+      averageRating: Math.round((avgResult._avg.rating || 0) * 10) / 10,
+      ratingDistribution: { 1: dist[0], 2: dist[1], 3: dist[2], 4: dist[3], 5: dist[4] },
+      recentFeedback: recent
+    })
   } catch (error) {
     console.error('Failed to get feedback stats:', error)
     res.status(500).json({ error: 'Failed to get feedback statistics' })
@@ -1204,11 +1176,11 @@ app.get('/api/feedback/stats', authenticateToken, async (req, res) => {
 app.get('/api/analytics', authenticateToken, async (req, res) => {
   try {
     // Log the decoded user for debugging
-    console.log('Analytics request - user:', JSON.stringify(req.user))
+
     
     // Check if user is admin
     if (!req.user.isAdmin) {
-      console.log('Admin access denied for:', req.user.email)
+
       return res.status(403).json({ error: 'Admin access required' })
     }
 
@@ -1218,16 +1190,16 @@ app.get('/api/analytics', authenticateToken, async (req, res) => {
 
     switch (timeRange) {
       case '7d':
-        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+        startDate = new Date(now.getTime() - 7 * ONE_DAY_MS)
         break
       case '30d':
-        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+        startDate = new Date(now.getTime() - 30 * ONE_DAY_MS)
         break
       case '90d':
-        startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
+        startDate = new Date(now.getTime() - 90 * ONE_DAY_MS)
         break
       default:
-        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+        startDate = new Date(now.getTime() - 7 * ONE_DAY_MS)
     }
 
     // Get sessions and responses from database
@@ -1296,263 +1268,143 @@ app.get('/api/analytics', authenticateToken, async (req, res) => {
   }
 })
 
-// GET /api/audit/logs - Get audit logs (super admin access) (in-memory)
+// GET /api/audit/logs - Get audit logs (super admin access)
 app.get('/api/audit/logs', authenticateToken, async (req, res) => {
+  if (!req.user.isAdmin) return res.status(403).json({ error: 'Admin access required' })
   try {
-    // Check if user is admin
-    if (!req.user.isAdmin) {
-      return res.status(403).json({ error: 'Admin access required' })
-    }
-
-    const logs = auditLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-
+    const logs = await prisma.auditLog.findMany({ orderBy: { timestamp: 'desc' }, take: 500 })
     res.json({ logs })
-
   } catch (error) {
     console.error('Failed to get audit logs:', error)
     res.status(500).json({ error: 'Failed to get audit logs' })
   }
 })
 
-// GET /api/password-reset/check/:email - Check password reset eligibility (in-memory)
-let passwordResets = {}
+// GET /api/password-reset/check/:email - Check password reset eligibility
 app.get('/api/password-reset/check/:email', async (req, res) => {
   const { email } = req.params
-
   try {
-    let resetRecord = passwordResets[email]
-
     const now = new Date()
-    const currentMonth = now.getMonth()
-    const currentYear = now.getFullYear()
+    let record = await prisma.passwordReset.findUnique({ where: { userEmail: email } })
 
-    // Create record if it doesn't exist
-    if (!resetRecord) {
-      resetRecord = {
-        userEmail: email,
-        resetCount: 0,
-        monthlyCount: 0,
-        monthlyResetDate: now.toISOString(),
-        lastReset: null
+    if (!record) {
+      record = await prisma.passwordReset.create({
+        data: { userEmail: email, resetCount: 0, monthlyCount: 0, monthlyResetDate: now }
+      })
+    }
+
+    // Reset monthly count if we're in a new month
+    let monthlyCount = record.monthlyCount
+    if (record.monthlyResetDate) {
+      const recordDate = new Date(record.monthlyResetDate)
+      if (recordDate.getMonth() !== now.getMonth() || recordDate.getFullYear() !== now.getFullYear()) {
+        monthlyCount = 0
+        await prisma.passwordReset.update({ where: { userEmail: email }, data: { monthlyCount: 0, monthlyResetDate: now } })
       }
-      passwordResets[email] = resetRecord
     }
 
-    // Check if we need to reset monthly count
-    const recordMonth = new Date(resetRecord.monthlyResetDate).getMonth()
-    const recordYear = new Date(resetRecord.monthlyResetDate).getFullYear()
-
-    let monthlyCount = resetRecord.monthlyCount
-    let nextResetDate = resetRecord.monthlyResetDate
-
-    if (recordMonth !== currentMonth || recordYear !== currentYear) {
-      // Reset monthly count for new month
-      monthlyCount = 0
-      nextResetDate = new Date(currentYear, currentMonth + 1, 1).toISOString() // First day of next month
-
-      // Update the record
-      resetRecord.monthlyCount = 0
-      resetRecord.monthlyResetDate = now.toISOString()
-    }
-
-    const canReset = monthlyCount < 3
-    const remainingResets = 3 - monthlyCount
-
-    res.json({
-      canReset,
-      remainingResets,
-      monthlyCount,
-      nextResetDate: nextResetDate
-    })
-
+    const nextResetDate = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString()
+    res.json({ canReset: monthlyCount < 3, remainingResets: 3 - monthlyCount, monthlyCount, nextResetDate })
   } catch (error) {
     console.error('Failed to check password reset eligibility:', error)
     res.status(500).json({ error: 'Failed to check reset eligibility' })
   }
 })
 
-// POST /api/password-reset/reset - Perform password reset (in-memory)
-app.post('/api/password-reset/reset', async (req, res) => {
+// POST /api/password-reset/reset - Perform password reset
+app.post('/api/password-reset/reset', resetLimiter, async (req, res) => {
   const { email, newPassword } = req.body
 
-  if (!userCredentials[email]) {
-    return res.status(404).json({ error: 'User not found' })
-  }
+  const userExists = await pool.query('SELECT email FROM "User" WHERE email = $1', [email])
+  if (!userExists.rows.length) return res.status(404).json({ error: 'User not found' })
 
   try {
-    // Check eligibility first
-    const eligibilityResponse = await fetch(`http://localhost:3001/api/password-reset/check/${email}`)
-    const eligibilityData = await eligibilityResponse.json()
-
-    if (!eligibilityData.canReset) {
-      return res.status(400).json({ error: 'Monthly reset limit exceeded' })
-    }
-
-    // Hash new password
-    const hashedPassword = await bcrypt.hash(newPassword, 10)
-
-    // Update password in memory (in production, this would update database)
-    userCredentials[email].password = hashedPassword
-
-    // Update reset count (in-memory)
     const now = new Date()
-    const currentMonth = now.getMonth()
-    const currentYear = now.getFullYear()
+    let record = await prisma.passwordReset.findUnique({ where: { userEmail: email } })
 
-    let resetRecord = passwordResets[email]
-
-    if (resetRecord) {
-      const recordMonth = new Date(resetRecord.monthlyResetDate).getMonth()
-      const recordYear = new Date(resetRecord.monthlyResetDate).getFullYear()
-
-      if (recordMonth === currentMonth && recordYear === currentYear) {
-        // Increment monthly count
-        resetRecord.resetCount += 1
-        resetRecord.monthlyCount += 1
-        resetRecord.lastReset = now.toISOString()
-      } else {
-        // Reset for new month
-        resetRecord.resetCount += 1
-        resetRecord.monthlyCount = 1
-        resetRecord.lastReset = now.toISOString()
-        resetRecord.monthlyResetDate = now.toISOString()
+    // Determine current month's count
+    let monthlyCount = 0
+    if (record && record.monthlyResetDate) {
+      const recordDate = new Date(record.monthlyResetDate)
+      if (recordDate.getMonth() === now.getMonth() && recordDate.getFullYear() === now.getFullYear()) {
+        monthlyCount = record.monthlyCount
       }
     }
 
-    res.json({ message: 'Password reset successfully' })
+    if (monthlyCount >= 3) return res.status(400).json({ error: 'Monthly reset limit exceeded' })
 
+    const hashedPassword = await bcrypt.hash(newPassword, 10)
+    await pool.query('UPDATE "User" SET password = $1, "lastPasswordChange" = $2 WHERE email = $3', [hashedPassword, now, email])
+
+    await prisma.passwordReset.upsert({
+      where: { userEmail: email },
+      update: { resetCount: { increment: 1 }, monthlyCount: { increment: 1 }, lastReset: now, monthlyResetDate: now },
+      create: { userEmail: email, resetCount: 1, monthlyCount: 1, lastReset: now, monthlyResetDate: now }
+    })
+
+    // Update in-memory credentials cache
+    if (userCredentials[email]) userCredentials[email].password = hashedPassword
+
+    res.json({ message: 'Password reset successfully' })
   } catch (error) {
     console.error('Failed to reset password:', error)
     res.status(500).json({ error: 'Failed to reset password' })
   }
 })
 
-// POST /api/password-reset/contact-admin - Contact admin for help (in-memory)
-let adminResetRequests = []
-app.post('/api/password-reset/contact-admin', async (req, res) => {
+// POST /api/password-reset/contact-admin - Contact admin for help
+app.post('/api/password-reset/contact-admin', resetLimiter, async (req, res) => {
   const { userEmail, reason } = req.body
-
   try {
-    // Create admin reset request
-    const request = {
-      id: `reset-request-${Date.now()}`,
-      userEmail,
-      reason: reason || 'Monthly password reset limit exceeded',
-      status: 'pending',
-      requestedAt: new Date().toISOString(),
-      processedAt: null,
-      processedBy: null
-    }
-
-    adminResetRequests.push(request)
-
-    res.json({
-      message: 'Admin contact request submitted successfully',
-      requestId: request.id
+    const request = await prisma.adminResetRequest.create({
+      data: { userEmail, reason: reason || 'Monthly password reset limit exceeded', status: 'pending' }
     })
-
+    res.json({ message: 'Admin contact request submitted successfully', requestId: request.id })
   } catch (error) {
     console.error('Failed to submit admin contact request:', error)
     res.status(500).json({ error: 'Failed to submit request' })
   }
 })
 
-// POST /api/quiz-progress - Auto-save quiz progress (in-memory)
-let quizProgress = []
+// POST /api/quiz-progress - Auto-save quiz progress
 app.post('/api/quiz-progress', async (req, res) => {
-  const { userEmail, sessionId, answers, timeRemaining } = req.body
-
+  const { userEmail, sessionId, answers, timeRemaining, questionOrder } = req.body
   try {
-    // If using PostgreSQL, save to database
-    if (usePostgres) {
-      const answersJson = JSON.stringify(answers)
-      
-      // Check if progress exists
-      const existingResult = await pool.query(
-        `SELECT id FROM "QuizProgress" WHERE "userEmail" = $1 AND "sessionId" = $2`,
-        [userEmail, sessionId]
-      )
-      
-      if (existingResult.rows.length > 0) {
-        // Update existing progress
-        await pool.query(
-          `UPDATE "QuizProgress" SET answers = $1, "timeRemaining" = $2, "lastSaved" = $3 WHERE "userEmail" = $4 AND "sessionId" = $5`,
-          [answersJson, timeRemaining, new Date(), userEmail, sessionId]
-        )
-      } else {
-        // Insert new progress
-        await pool.query(
-          `INSERT INTO "QuizProgress" ("userEmail", "sessionId", answers, "timeRemaining", "lastSaved") VALUES ($1, $2, $3, $4, $5)`,
-          [userEmail, sessionId, answersJson, timeRemaining, new Date()]
-        )
-      }
-      
-      const progress = { userEmail, sessionId, answers, timeRemaining, lastSaved: new Date().toISOString() }
-      return res.json({ message: 'Progress saved successfully', progress })
-    }
-    
-    // In-memory fallback
-    let progress = quizProgress.find(p => p.userEmail === userEmail && p.sessionId === sessionId)
+    const updateData = { answers: JSON.stringify(answers), lastSaved: new Date() }
+    if (timeRemaining !== undefined) updateData.timeRemaining = timeRemaining
+    if (questionOrder !== undefined) updateData.questionOrder = JSON.stringify(questionOrder)
 
-    if (progress) {
-      // Update existing progress
-      progress.answers = answers
-      progress.timeRemaining = timeRemaining
-      progress.lastSaved = new Date().toISOString()
-    } else {
-      // Create new progress
-      progress = {
-        id: `progress-${Date.now()}`,
-        userEmail: userEmail,
-        sessionId: sessionId,
-        answers: answers,
-        timeRemaining: timeRemaining,
-        lastSaved: new Date().toISOString()
+    const progress = await prisma.quizProgress.upsert({
+      where: { userEmail_sessionId: { userEmail, sessionId } },
+      update: updateData,
+      create: {
+        userEmail, sessionId,
+        answers: JSON.stringify(answers),
+        timeRemaining: timeRemaining ?? 1800,
+        questionOrder: JSON.stringify(questionOrder || []),
+        lastSaved: new Date()
       }
-      quizProgress.push(progress)
-    }
-
-    res.json({ message: 'Progress saved successfully', progress })
+    })
+    res.json({ message: 'Progress saved successfully', progress: { ...progress, answers } })
   } catch (error) {
     console.error('Failed to save quiz progress:', error)
     res.status(500).json({ error: 'Failed to save progress' })
   }
 })
 
-// GET /api/quiz-progress/:userEmail/:sessionId - Get saved quiz progress (in-memory)
+// GET /api/quiz-progress/:userEmail/:sessionId - Get saved quiz progress
 app.get('/api/quiz-progress/:userEmail/:sessionId', async (req, res) => {
   const { userEmail, sessionId } = req.params
-
   try {
-    // If using PostgreSQL, get from database
-    if (usePostgres) {
-      const result = await pool.query(
-        `SELECT * FROM "QuizProgress" WHERE "userEmail" = $1 AND "sessionId" = $2`,
-        [userEmail, sessionId]
-      )
-      
-      if (result.rows.length === 0) {
-        return res.json(null)
-      }
-      
-      const row = result.rows[0]
-      return res.json({
-        id: row.id,
-        userEmail: row.userEmail,
-        sessionId: row.sessionId,
-        answers: JSON.parse(row.answers),
-        timeRemaining: row.timeRemaining,
-        lastSaved: row.lastSaved
-      })
-    }
-    
-    const progress = quizProgress.find(p => p.userEmail === userEmail && p.sessionId === sessionId)
-
-    if (!progress) {
-      return res.json(null)
-    }
-
-    res.json(progress)
+    const progress = await prisma.quizProgress.findUnique({
+      where: { userEmail_sessionId: { userEmail, sessionId } }
+    })
+    if (!progress) return res.json(null)
+    res.json({
+      ...progress,
+      answers: JSON.parse(progress.answers || '{}'),
+      questionOrder: JSON.parse(progress.questionOrder || '[]')
+    })
   } catch (error) {
     console.error('Failed to get quiz progress:', error)
     res.status(500).json({ error: 'Failed to get progress' })
@@ -1560,7 +1412,7 @@ app.get('/api/quiz-progress/:userEmail/:sessionId', async (req, res) => {
 })
 
 // POST /api/register - User registration
-app.post('/api/register', async (req, res) => {
+app.post('/api/register', registerLimiter, async (req, res) => {
   const { email, password, department, displayName } = req.body
 
   if (!email || !password || !department) {
@@ -1576,6 +1428,11 @@ app.post('/api/register', async (req, res) => {
   const domain = email.split('@')[1]
   if (domain !== 'bdo.co.zw') {
     return res.status(400).json({ error: 'Only @bdo.co.zw email addresses are allowed' })
+  }
+
+  const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/
+  if (!passwordRegex.test(password)) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters and include uppercase, lowercase, number, and special character (@$!%*?&).' })
   }
 
   try {
@@ -1635,9 +1492,8 @@ app.post('/api/register', async (req, res) => {
   }
 })
 
-// POST /api/login - User authentication with JWT (in-memory)
-let userSessions = []
-app.post('/api/login', async (req, res) => {
+// POST /api/login - User authentication with JWT
+app.post('/api/login', authLimiter, async (req, res) => {
   const { email, password } = req.body
 
   if (!email || !password) {
@@ -1645,141 +1501,91 @@ app.post('/api/login', async (req, res) => {
   }
 
   const user = userCredentials[email]
-
   if (!user) {
     return res.status(401).json({ error: 'Invalid email or password' })
   }
 
   try {
-    // Check password
     const isValidPassword = await bcrypt.compare(password, typeof user.password === 'string' ? user.password : user.password.toString())
-
     if (!isValidPassword) {
       return res.status(401).json({ error: 'Invalid email or password' })
     }
 
-    // Generate tokens
     const { accessToken, refreshToken } = generateTokens({ email, ...user })
+    const expiresAt = new Date(Date.now() + ACCESS_TOKEN_TTL_MS)
 
-    // Store session in memory
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000) // 15 minutes from now
-    const session = {
-      id: `session-${Date.now()}`,
-      userEmail: email,
-      sessionToken: accessToken,
-      refreshToken: refreshToken,
-      expiresAt: expiresAt.toISOString(),
-      lastActivity: new Date().toISOString(),
-      createdAt: new Date().toISOString()
-    }
-    userSessions.push(session)
+    await prisma.userSession.create({
+      data: { userEmail: email, sessionToken: accessToken, refreshToken, expiresAt, lastActivity: new Date() }
+    })
 
-    // Return user data with tokens
+    const cookieOpts = { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict' }
+    res.cookie('accessToken', accessToken, { ...cookieOpts, maxAge: ACCESS_TOKEN_TTL_MS })
+    res.cookie('refreshToken', refreshToken, { ...cookieOpts, maxAge: REFRESH_TOKEN_TTL_MS })
+
     res.json({
-      email: email,
+      email,
       department: user.department,
       isAdmin: user.isAdmin,
-      accessToken: accessToken,
-      refreshToken: refreshToken,
-      expiresIn: 15 * 60 // 15 minutes in seconds
+      accessToken,
+      refreshToken,
+      expiresIn: ACCESS_TOKEN_TTL_MS / 1000
     })
   } catch (error) {
-    // Log the actual error to file for debugging
-    const errorDetails = {
-      requestId: req.requestId || `req-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      method: req.method,
-      url: req.originalUrl,
-      statusCode: 500,
-      errorMessage: error.message,
-      errorStack: error.stack,
-      userAgent: req.get('user-agent'),
-      ip: req.ip,
-      requestBody: { email, password: '***' }
-    }
-    logToFile(ERROR_LOG_FILE, JSON.stringify(errorDetails))
+    logToFile(ERROR_LOG_FILE, JSON.stringify({ timestamp: new Date().toISOString(), url: req.originalUrl, error: error.message, email }))
     console.error('Login error:', error)
     res.status(500).json({ error: 'Login failed' })
   }
 })
 
-// POST /api/refresh - Refresh access token (in-memory)
+// POST /api/refresh - Refresh access token
 app.post('/api/refresh', async (req, res) => {
-  const { refreshToken } = req.body
-
-  if (!refreshToken) {
-    return res.status(401).json({ error: 'Refresh token required' })
-  }
+  const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken
+  if (!refreshToken) return res.status(401).json({ error: 'Refresh token required' })
 
   try {
-    // Verify refresh token
     const decoded = jwt.verify(refreshToken, JWT_REFRESH_SECRET)
-    console.log('Refresh token decoded:', decoded.email)
 
-    // Check if refresh token exists in memory and is valid
-    const sessionIndex = userSessions.findIndex(s => s.userEmail === decoded.email && s.refreshToken === refreshToken)
-    
-    console.log('User sessions:', userSessions.map(s => ({ email: s.userEmail, refreshToken: s.refreshToken ? 'present' : 'missing' })))
+    const session = await prisma.userSession.findFirst({
+      where: { userEmail: decoded.email, refreshToken }
+    })
 
-    if (sessionIndex === -1) {
-      console.log('Refresh token not found in memory for:', decoded.email)
-      return res.status(403).json({ error: 'Invalid refresh token' })
-    }
+    if (!session) return res.status(403).json({ error: 'Invalid refresh token' })
 
-    const session = userSessions[sessionIndex]
-
-    // Check if session has expired due to inactivity
-    const lastActivity = new Date(session.lastActivity)
-    const now = new Date()
-    const timeSinceActivity = now.getTime() - lastActivity.getTime()
-
+    const timeSinceActivity = Date.now() - new Date(session.lastActivity).getTime()
     if (timeSinceActivity > SESSION_TIMEOUT) {
-      // Session expired due to inactivity
-      userSessions.splice(sessionIndex, 1)
+      await prisma.userSession.delete({ where: { id: session.id } })
       return res.status(401).json({ error: 'Session expired due to inactivity', code: 'SESSION_EXPIRED' })
     }
 
-    // Generate new tokens
     const user = userCredentials[decoded.email]
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' })
-    }
+    if (!user) return res.status(404).json({ error: 'User not found' })
 
     const { accessToken: newAccessToken, refreshToken: newRefreshToken } = generateTokens(user)
+    const newExpiresAt = new Date(Date.now() + ACCESS_TOKEN_TTL_MS)
 
-    // Update session in memory
-    const newExpiresAt = new Date(Date.now() + 15 * 60 * 1000) // 15 minutes from now
-    userSessions[sessionIndex] = {
-      ...session,
-      sessionToken: newAccessToken,
-      refreshToken: newRefreshToken,
-      expiresAt: newExpiresAt.toISOString(),
-      lastActivity: new Date().toISOString()
-    }
-
-    res.json({
-      accessToken: newAccessToken,
-      refreshToken: newRefreshToken,
-      expiresIn: 15 * 60
+    await prisma.userSession.update({
+      where: { id: session.id },
+      data: { sessionToken: newAccessToken, refreshToken: newRefreshToken, expiresAt: newExpiresAt, lastActivity: new Date() }
     })
+
+    const cookieOpts = { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict' }
+    res.cookie('accessToken', newAccessToken, { ...cookieOpts, maxAge: ACCESS_TOKEN_TTL_MS })
+    res.cookie('refreshToken', newRefreshToken, { ...cookieOpts, maxAge: REFRESH_TOKEN_TTL_MS })
+
+    res.json({ accessToken: newAccessToken, refreshToken: newRefreshToken, expiresIn: ACCESS_TOKEN_TTL_MS / 1000 })
   } catch (error) {
     console.error('Refresh token error:', error)
     res.status(403).json({ error: 'Invalid refresh token' })
   }
 })
 
-// POST /api/logout - Logout and invalidate session (in-memory)
+// POST /api/logout - Logout and invalidate session
 app.post('/api/logout', authenticateToken, async (req, res) => {
   try {
-    const authHeader = req.headers['authorization']
-    const token = authHeader && authHeader.split(' ')[1]
-
-    // Delete the current session from memory
-    const sessionIndex = userSessions.findIndex(s => s.userEmail === req.user.email && s.sessionToken === token)
-    if (sessionIndex !== -1) {
-      userSessions.splice(sessionIndex, 1)
-    }
-
+    const token = req.cookies?.accessToken || (req.headers['authorization']?.split(' ')[1])
+    await prisma.userSession.deleteMany({ where: { userEmail: req.user.email, sessionToken: token } })
+    res.clearCookie('accessToken')
+    res.clearCookie('refreshToken')
     res.json({ message: 'Logged out successfully' })
   } catch (error) {
     console.error('Logout error:', error)
@@ -1787,12 +1593,12 @@ app.post('/api/logout', authenticateToken, async (req, res) => {
   }
 })
 
-// POST /api/logout-all - Logout from all devices (in-memory)
+// POST /api/logout-all - Logout from all devices
 app.post('/api/logout-all', authenticateToken, async (req, res) => {
   try {
-    // Delete all sessions for this user from memory
-    userSessions = userSessions.filter(s => s.userEmail !== req.user.email)
-
+    await prisma.userSession.deleteMany({ where: { userEmail: req.user.email } })
+    res.clearCookie('accessToken')
+    res.clearCookie('refreshToken')
     res.json({ message: 'Logged out from all devices successfully' })
   } catch (error) {
     console.error('Logout all error:', error)
@@ -1800,44 +1606,31 @@ app.post('/api/logout-all', authenticateToken, async (req, res) => {
   }
 })
 
-// GET /api/session-status - Check if session is still valid (in-memory)
+// GET /api/session-status - Check if session is still valid
 app.get('/api/session-status', authenticateToken, async (req, res) => {
   try {
-    // Check if user still exists and is active
     const user = userCredentials[req.user.email]
-    if (!user) {
-      return res.status(401).json({ error: 'User not found' })
-    }
+    if (!user) return res.status(401).json({ error: 'User not found' })
 
-    // Check session activity in memory
     const authHeader = req.headers['authorization']
     const token = authHeader && authHeader.split(' ')[1]
-    const session = userSessions.find(s => s.userEmail === req.user.email && s.sessionToken === token)
+    const session = await prisma.userSession.findFirst({
+      where: { userEmail: req.user.email, sessionToken: token }
+    })
 
-    if (!session) {
-      return res.status(401).json({ error: 'Session not found' })
-    }
+    if (!session) return res.status(401).json({ error: 'Session not found' })
 
-    const lastActivity = new Date(session.lastActivity)
-    const now = new Date()
-    const timeSinceActivity = now.getTime() - lastActivity.getTime()
-
+    const timeSinceActivity = Date.now() - new Date(session.lastActivity).getTime()
     if (timeSinceActivity > SESSION_TIMEOUT) {
-      // Session expired due to inactivity
-      const sessionIndex = userSessions.findIndex(s => s.id === session.id)
-      if (sessionIndex !== -1) {
-        userSessions.splice(sessionIndex, 1)
-      }
+      await prisma.userSession.delete({ where: { id: session.id } })
       return res.status(401).json({ error: 'Session expired due to inactivity', code: 'SESSION_EXPIRED' })
     }
 
+    await prisma.userSession.update({ where: { id: session.id }, data: { lastActivity: new Date() } })
+
     res.json({
       valid: true,
-      user: {
-        email: req.user.email,
-        department: req.user.department,
-        isAdmin: req.user.isAdmin
-      },
+      user: { email: req.user.email, department: req.user.department, isAdmin: req.user.isAdmin },
       timeUntilExpiry: SESSION_TIMEOUT - timeSinceActivity
     })
   } catch (error) {
@@ -1883,48 +1676,20 @@ app.post('/api/responses', authenticateToken, async (req, res) => {
       newResponse.completedAt
     ])
 
-    // Check if this is a low score that needs retake cooldown
+    // Update retake record based on score
     if (responseData.score < 45) {
-      // Start retake cooldown immediately for warning zone scores
-      if (!userRetakes[responseData.userEmail]) {
-        userRetakes[responseData.userEmail] = {}
-      }
-
-      if (!userRetakes[responseData.userEmail][responseData.sessionId]) {
-        userRetakes[responseData.userEmail][responseData.sessionId] = {
-          attempts: 1,
-          cooldownUntil: new Date(Date.now() + 30 * 60 * 1000).toISOString(), // 30 minutes from now
-          retakeWindowStart: null,
-          retakeWindowEnd: null,
-          canRetake: false,
-          passed: false,
-          finalScore: responseData.score
-        }
-      } else {
-        // If they already have retake data, increment attempts if not passed
-        const retakeData = userRetakes[responseData.userEmail][responseData.sessionId]
-        if (!retakeData.passed) {
-          retakeData.attempts += 1
-          retakeData.finalScore = responseData.score
-          // After first retake failure, start 30-min cooldown then 2-hour window
-          if (retakeData.attempts <= 2) {
-            retakeData.cooldownUntil = new Date(Date.now() + 30 * 60 * 1000).toISOString()
-            retakeData.canRetake = false
-            retakeData.retakeWindowStart = null
-            retakeData.retakeWindowEnd = null
-          }
-        }
-      }
+      const cooldownEnd = new Date(Date.now() + RETAKE_COOLDOWN_MS)
+      await prisma.userRetake.upsert({
+        where: { userEmail_sessionId: { userEmail: responseData.userEmail, sessionId: responseData.sessionId } },
+        update: { attempts: { increment: 1 }, cooldownUntil: cooldownEnd, canRetake: false, lastAttempt: new Date() },
+        create: { userEmail: responseData.userEmail, sessionId: responseData.sessionId, attempts: 1, cooldownUntil: cooldownEnd, canRetake: false, lastAttempt: new Date() }
+      })
     } else {
-      // Score >= 45 - user passed! Update retake data
-      if (userRetakes[responseData.userEmail] && userRetakes[responseData.userEmail][responseData.sessionId]) {
-        const retakeData = userRetakes[responseData.userEmail][responseData.sessionId]
-        retakeData.passed = true
-        retakeData.canRetake = false
-        retakeData.cooldownUntil = null
-        retakeData.finalScore = responseData.score
-        retakeData.retakeWindowEnd = new Date().toISOString() // Close window
-      }
+      // Passed — close any open retake window
+      await prisma.userRetake.updateMany({
+        where: { userEmail: responseData.userEmail, sessionId: responseData.sessionId },
+        data: { canRetake: false, cooldownUntil: null }
+      })
     }
 
     res.status(201).json(newResponse)
@@ -1940,7 +1705,7 @@ app.get('/api/user/:email/profile', authenticateToken, async (req, res) => {
 
   try {
     // Users can only view their own profile, or admins can view any profile
-    console.log('Profile access check:', { userEmail: req.user.email, requestedEmail: email, isAdmin: req.user.isAdmin })
+
     if (req.user.email !== email && !req.user.isAdmin) {
       return res.status(403).json({ error: 'Access denied' })
     }
@@ -2043,12 +1808,12 @@ app.patch('/api/user/:email/profile', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'No updates provided' })
     }
 
+    values.push(email)
     let result
-    // Use direct string interpolation for email to avoid type issues
     result = await pool.query(`
       UPDATE "User"
       SET ${updates.join(', ')}
-      WHERE email = '${email}'
+      WHERE email = $${values.length}
       RETURNING id, email, department, "isAdmin", "darkMode", "profileImage", "displayName", "lastPasswordChange", "createdAt"
     `, values)
 
@@ -2098,6 +1863,11 @@ app.patch('/api/user/:email/password', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'New password is required' })
     }
 
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/
+    if (!passwordRegex.test(newPassword)) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters and include uppercase, lowercase, number, and special character (@$!%*?&).' })
+    }
+
     // For admin password changes, skip current password verification
     if (req.user.email === email) {
       // Regular user changing their own password - verify current password
@@ -2127,21 +1897,70 @@ app.patch('/api/user/:email/password', authenticateToken, async (req, res) => {
       userCredentials[email].password = hashedPassword
     }
 
-    // Log audit action
-    await logAuditAction(
-      req.user.email,
-      'change_password',
-      {
-        changedUser: email,
-        adminChange: req.user.email !== email
-      },
-      req
-    )
+    await logAuditAction(req.user.email, 'change_password', { changedUser: email, adminChange: req.user.email !== email }, req)
+
+    // Notify the user if an admin changed their password
+    if (req.user.email !== email) {
+      await prisma.userNotification.create({
+        data: {
+          userEmail: email,
+          type: 'security',
+          title: 'Password Changed by Admin',
+          message: `An administrator has changed your password. If you did not request this, contact IT support immediately.`,
+          adminEmail: req.user.email
+        }
+      }).catch(() => {})
+    }
 
     res.json({ message: 'Password changed successfully' })
   } catch (error) {
     console.error('Error changing password:', error)
     res.status(500).json({ error: 'Failed to change password' })
+  }
+})
+
+// DELETE /api/user/:email/account - GDPR right-to-erasure: anonymise and soft-delete user
+app.delete('/api/user/:email/account', authenticateToken, async (req, res) => {
+  const { email } = req.params
+  if (req.user.email !== email && !req.user.isAdmin) {
+    return res.status(403).json({ error: 'Access denied' })
+  }
+  try {
+    const anonEmail = `deleted_${Date.now()}@deleted.invalid`
+    await pool.query(
+      `UPDATE "User" SET email = $1, password = $2, "displayName" = $3, "profileImage" = NULL, "deletedAt" = $4 WHERE email = $5`,
+      [anonEmail, 'DELETED', 'Deleted User', new Date(), email]
+    )
+    await prisma.userSession.deleteMany({ where: { userEmail: email } })
+    res.clearCookie('accessToken')
+    res.clearCookie('refreshToken')
+    await logAuditAction(req.user.email, 'account_deleted', { targetEmail: email }, req)
+    res.json({ message: 'Account deleted and data anonymised' })
+  } catch (error) {
+    console.error('Failed to delete account:', error)
+    res.status(500).json({ error: 'Failed to delete account' })
+  }
+})
+
+// GET /api/user/:email/export - GDPR data portability: export all user data
+app.get('/api/user/:email/export', authenticateToken, async (req, res) => {
+  const { email } = req.params
+  if (req.user.email !== email && !req.user.isAdmin) {
+    return res.status(403).json({ error: 'Access denied' })
+  }
+  try {
+    const [userRow, responses, warnings, notifications, feedback] = await Promise.all([
+      pool.query('SELECT id, email, department, "isAdmin", "displayName", "createdAt" FROM "User" WHERE email = $1', [email]),
+      pool.query('SELECT score, "timeSpent", "completedAt", "sessionId" FROM "QuizResponse" qr JOIN "User" u ON u.id = qr."userId" WHERE u.email = $1', [email]),
+      prisma.userWarning.findMany({ where: { userEmail: email } }),
+      prisma.userNotification.findMany({ where: { userEmail: email } }),
+      prisma.quizFeedback.findMany({ where: { userEmail: email } })
+    ])
+    res.setHeader('Content-Disposition', `attachment; filename="my-data-${Date.now()}.json"`)
+    res.json({ profile: userRow.rows[0], quizResponses: responses.rows, warnings, notifications, feedback })
+  } catch (error) {
+    console.error('Failed to export user data:', error)
+    res.status(500).json({ error: 'Failed to export data' })
   }
 })
 
@@ -2259,22 +2078,37 @@ app.patch('/api/user/:email/demote', authenticateToken, async (req, res) => {
 })
 
 // Initialize user credentials synchronously before starting server
+let httpServer = null
+
 const startServer = async () => {
   try {
-    console.log('Initializing user credentials...')
     userCredentials = await initializeUserCredentials()
-    console.log('User credentials initialized successfully')
+    logger.info(`Loaded ${Object.keys(userCredentials).length} users from database`)
 
-    app.listen(PORT, () => {
-      console.log(`BDO Skills Pulse API server running on http://localhost:${PORT}`)
-      console.log('Note: Using mock data for demonstration purposes')
-      console.log('Admin accounts initialized with secure passwords')
-      console.log('Professional training effectiveness and competency validation platform')
+    httpServer = app.listen(PORT, () => {
+      logger.info(`BDO Skills Pulse API server running on http://localhost:${PORT}`)
     })
   } catch (error) {
     console.error('Failed to initialize server:', error)
     process.exit(1)
   }
 }
+
+const shutdown = async (signal) => {
+  logger.info(`${signal} received — shutting down gracefully`)
+  if (httpServer) {
+    httpServer.close(async () => {
+      await pool.end().catch(() => {})
+      await prisma.$disconnect().catch(() => {})
+      logger.info('Server closed cleanly')
+      process.exit(0)
+    })
+  } else {
+    process.exit(0)
+  }
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'))
+process.on('SIGINT', () => shutdown('SIGINT'))
 
 startServer()

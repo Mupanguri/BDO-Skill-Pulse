@@ -1,0 +1,93 @@
+[2026-04-29T06:25:52.881Z] ERROR 401: GET /api/session-status 3ms — Session not found
+[2026-04-29T06:25:52.929Z] ERROR 403: POST /api/refresh 195ms — Invalid refresh token
+[2026-04-29T06:30:53.793Z] ERROR 401: GET /api/session-status 62ms — Session not found
+[2026-04-29T06:30:53.800Z] ERROR 401: POST /api/refresh 0ms — Refresh token required
+[2026-04-30T03:05:22.273Z] ERROR 403: POST /api/refresh 94ms — Invalid refresh token
+[2026-04-30T03:05:22.279Z] ERROR 401: GET /api/session-status 97ms — Session not found
+[2026-04-30T03:05:22.293Z] ERROR 401: GET /api/session-status 3ms — Session not found
+[2026-04-30T03:05:22.303Z] ERROR 403: POST /api/refresh 4ms — Invalid refresh token
+[2026-04-30T03:05:22.308Z] ERROR 403: POST /api/refresh 3ms — Invalid refresh token
+[2026-04-30T03:05:22.323Z] ERROR 401: POST /api/logout 1ms — Access token required
+[2026-04-30T03:05:22.331Z] ERROR 401: POST /api/logout 2ms — Access token required
+[2026-04-30T06:11:31.670Z] ERROR 400: POST /api/register 6ms — Password must be at least 8 characters and include uppercase, lowercase, number, and special character (@$!%*?&).
+[2026-04-30T06:11:50.436Z] ERROR 400: POST /api/register 2ms — Password must be at least 8 characters and include uppercase, lowercase, number, and special character (@$!%*?&).
+[2026-04-30T06:12:06.484Z] ERROR 400: POST /api/register 2ms — Password must be at least 8 characters and include uppercase, lowercase, number, and special character (@$!%*?&).
+[2026-04-30T07:17:08.437Z] ERROR 401: GET /api/session-status 80ms — Session not found
+[2026-04-30T07:27:09.528Z] ERROR 401: GET /api/session-status 170ms — Session not found
+[2026-04-30T08:22:43.686Z] ERROR 401: GET /api/session-status 1ms — Access token required
+[2026-04-30T08:22:43.698Z] ERROR 401: GET /api/session-status 1ms — Access token required
+[2026-04-30T08:28:58.282Z] ERROR 400: POST /api/register 1ms — Password must be at least 8 characters and include uppercase, lowercase, number, and special character (@$!%*?&).
+[2026-04-30T08:30:29.205Z] ERROR 400: POST /api/register 1ms — Password must be at least 8 characters and include uppercase, lowercase, number, and special character (@$!%*?&).
+[2026-04-30T08:30:30.409Z] ERROR 400: POST /api/register 1ms — Password must be at least 8 characters and include uppercase, lowercase, number, and special character (@$!%*?&).
+[2026-04-30T09:57:24.437Z] ERROR 401: GET /api/session-status 79ms — Session not found
+[2026-04-30T10:07:25.435Z] ERROR 401: GET /api/session-status 75ms — Session not found
+[2026-04-30T11:07:40.544Z] ERROR 401: GET /api/session-status 77ms — Access token expired
+[2026-04-30T11:07:41.068Z] ERROR 401: POST /api/refresh 478ms — Session expired due to inactivity
+[2026-04-30T11:07:41.119Z] ERROR 403: POST /api/refresh 446ms — Invalid refresh token
+[2026-04-30T11:07:41.126Z] ERROR 401: POST /api/logout 3ms — Access token expired
+[2026-04-30T11:07:41.137Z] ERROR 401: POST /api/logout 1ms — Access token expired
+[2026-04-30T13:36:46.848Z] ERROR 403: GET /api/users 2ms — Admin access required
+[2026-04-30T13:36:46.866Z] ERROR 403: GET /api/users 2ms — Admin access required
+[2026-04-30T13:37:03.152Z] ERROR 403: GET /api/users 2ms — Admin access required
+[2026-04-30T13:37:03.174Z] ERROR 403: GET /api/users 2ms — Admin access required
+[2026-04-30T13:37:06.665Z] ERROR 403: GET /api/analytics?timeRange=all 2ms — Admin access required
+[2026-04-30T13:37:06.678Z] ERROR 403: GET /api/analytics?timeRange=all 3ms — Admin access required
+[2026-04-30T13:37:09.532Z] ERROR 403: GET /api/users 2ms — Admin access required
+[2026-04-30T13:37:09.548Z] ERROR 403: GET /api/users 2ms — Admin access required
+[2026-04-30T13:38:02.060Z] ERROR 403: GET /api/users 2ms — Admin access required
+[2026-04-30T13:38:02.074Z] ERROR 403: GET /api/users 1ms — Admin access required
+[2026-04-30T13:46:35.089Z] ERROR 401: GET /api/session-status 244ms — Session not found
+[2026-04-30T13:56:35.187Z] ERROR 401: GET /api/session-status 76ms — Session not found
+[2026-04-30T14:07:57.607Z] ERROR 403: GET /api/users 1ms — Admin access required
+[2026-04-30T14:07:57.621Z] ERROR 403: GET /api/users 1ms — Admin access required
+[2026-04-30T14:26:37.485Z] ERROR 401: GET /api/session-status 114ms — Session not found
+[2026-04-30T15:16:42.559Z] ERROR 401: GET /api/session-status 186ms — Session not found
+[2026-05-01T13:57:06.112Z] ERROR 401: GET /api/session-status 67ms — Access token expired
+[2026-05-01T13:57:06.326Z] ERROR 401: POST /api/logout 3ms — Access token expired
+[2026-05-01T13:57:06.530Z] ERROR 401: POST /api/logout 3ms — Access token expired
+[2026-05-01T13:57:06.539Z] ERROR 401: POST /api/refresh 349ms — Session expired due to inactivity
+[2026-05-01T13:57:31.481Z] ERROR 401: GET /api/user/rmupanguri@bdo.co.zw/profile 1ms — Access token required
+[2026-05-01T13:57:31.491Z] ERROR 401: GET /api/user/rmupanguri@bdo.co.zw/profile 1ms — Access token required
+[2026-05-01T13:58:09.026Z] ERROR 401: POST /api/logout 1ms — Access token required
+[2026-05-01T13:59:43.309Z] ERROR 403: GET /api/analytics?timeRange=all 4ms — Admin access required
+[2026-05-01T13:59:43.340Z] ERROR 403: GET /api/analytics?timeRange=all 2ms — Admin access required
+[2026-05-01T14:01:44.336Z] ERROR 403: GET /api/analytics?timeRange=all 1ms — Admin access required
+[2026-05-01T14:01:44.369Z] ERROR 403: GET /api/analytics?timeRange=all 3ms — Admin access required
+[2026-05-01T14:18:14.100Z] ERROR 401: GET /api/session-status 174ms — Session not found
+[2026-05-01T14:38:15.379Z] ERROR 401: GET /api/session-status 168ms — Session not found
+[2026-05-01T14:46:23.863Z] ERROR 403: GET /api/analytics?timeRange=all 6ms — Admin access required
+[2026-05-01T14:46:23.878Z] ERROR 403: GET /api/analytics?timeRange=all 1ms — Admin access required
+[2026-05-01T15:17:02.211Z] ERROR 401: GET /api/session-status 1ms — Access token required
+[2026-05-01T15:17:02.222Z] ERROR 401: GET /api/session-status 1ms — Access token required
+[2026-05-01T15:17:02.303Z] ERROR 403: POST /api/refresh 95ms — Invalid refresh token
+[2026-05-01T15:17:02.314Z] ERROR 403: POST /api/refresh 79ms — Invalid refresh token
+[2026-05-01T15:17:02.395Z] ERROR 403: POST /api/refresh 171ms — Invalid refresh token
+[2026-05-01T15:17:02.404Z] ERROR 401: POST /api/logout 1ms — Access token required
+[2026-05-01T15:56:06.842Z] ERROR 403: GET /api/analytics?timeRange=all 2ms — Admin access required
+[2026-05-01T15:56:06.863Z] ERROR 403: GET /api/analytics?timeRange=all 2ms — Admin access required
+[2026-05-01T16:08:09.373Z] ERROR 401: GET /api/session-status 168ms — Session not found
+[2026-05-01T17:30:26.760Z] ERROR 401: GET /api/session-status 203ms — Session not found
+[2026-05-01T21:22:56.642Z] ERROR 401: POST /api/refresh 2ms — Refresh token required
+[2026-05-01T21:22:56.646Z] ERROR 401: GET /api/session-status 1ms — Access token required
+[2026-05-01T21:22:56.658Z] ERROR 401: POST /api/logout 2ms — Access token required
+[2026-05-01T21:22:56.661Z] ERROR 401: POST /api/refresh 1ms — Refresh token required
+[2026-05-01T21:22:56.671Z] ERROR 401: POST /api/logout 0ms — Access token required
+[2026-05-01T22:54:33.745Z] ERROR 400: POST /api/register 2ms — Password must be at least 8 characters and include uppercase, lowercase, number, and special character.
+[2026-05-01T23:06:42.370Z] ERROR 400: POST /api/register 2ms — Password must be at least 8 characters and include uppercase, lowercase, number, and special character.
+[2026-05-01T23:24:05.802Z] ERROR 401: GET /api/session-status 212ms — Session not found
+[2026-05-03T20:43:31.473Z] ERROR 401: POST /api/refresh 2538ms — Refresh token required
+[2026-05-03T20:43:32.228Z] ERROR 401: GET /api/session-status 337ms — Access token expired
+[2026-05-03T20:43:43.847Z] ERROR 401: POST /api/logout 6264ms — Access token expired
+[2026-05-03T20:43:44.071Z] ERROR 401: POST /api/refresh 9ms — Refresh token required
+[2026-05-03T20:43:44.509Z] ERROR 401: POST /api/logout 97ms — Access token expired
+[2026-05-03T20:46:50.005Z] ERROR 500: POST /api/sessions 385ms — Failed to create session
+[2026-05-03T20:47:23.331Z] ERROR 500: POST /api/sessions 121ms — Failed to create session
+[2026-05-03T20:47:49.584Z] ERROR 500: POST /api/sessions 180ms — Failed to create session
+[2026-05-03T20:52:28.279Z] ERROR 401: GET /api/session-status 6ms — Access token required
+[2026-05-03T20:52:28.305Z] ERROR 401: POST /api/refresh 2ms — Refresh token required
+[2026-05-03T20:52:28.318Z] ERROR 401: POST /api/logout 1ms — Access token required
+[2026-05-03T22:38:06.408Z] ERROR 401: POST /api/verify-password 94ms — Incorrect password
+[2026-05-03T22:38:21.484Z] ERROR 401: POST /api/login 95ms — Invalid email or password
+[2026-05-03T23:53:12.650Z] ERROR 429: POST /api/login 3ms — Too many attempts, please try again later.
+[2026-05-03T23:53:33.381Z] ERROR 429: POST /api/login 1ms — Too many attempts, please try again later.
+[2026-05-08T14:28:37.667Z] ERROR 401: GET /api/session-status 87ms — Session not found

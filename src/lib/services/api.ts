@@ -1,6 +1,5 @@
 // Centralized API configuration
-// Production URL: https://bdo-skill-pulse.onrender.com
-const API_BASE_URL = 'https://bdo-skill-pulse.onrender.com';
+const API_BASE_URL = (import.meta.env.VITE_API_URL as string) || '';
 
 // Use this to prevent Vite from optimizing away the string
 export function getApiBaseUrl() {
@@ -15,6 +14,8 @@ export const API_ENDPOINTS = {
   LOGOUT_ALL: `${API_BASE_URL}/api/logout-all`,
   REFRESH: `${API_BASE_URL}/api/refresh`,
   SESSION_STATUS: `${API_BASE_URL}/api/session-status`,
+  OTP_REQUEST: `${API_BASE_URL}/api/auth/otp/request`,
+  OTP_VERIFY: `${API_BASE_URL}/api/auth/otp/verify`,
   
   // Users
   USERS: `${API_BASE_URL}/api/users`,
@@ -67,11 +68,17 @@ export const API_ENDPOINTS = {
   LOGS_CLEAR: `${API_BASE_URL}/api/logs/clear`,
 };
 
-// Helper function to get auth headers
+// Helper function to get auth headers.
+// Tokens are sent automatically via httpOnly cookies; the Authorization header
+// is kept as a fallback for environments that don't support cookies.
 export const getAuthHeaders = (accessToken: string | null) => ({
   'Content-Type': 'application/json',
   ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
 });
+
+// Use this on every fetch call to ensure cookies are sent cross-origin
+export const fetchWithCredentials = (url: string, options: RequestInit = {}): Promise<Response> =>
+  fetch(url, { ...options, credentials: 'include' });
 
 export default API_ENDPOINTS;
 

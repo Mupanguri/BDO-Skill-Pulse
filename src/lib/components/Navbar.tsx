@@ -61,22 +61,20 @@ function Navbar() {
           <div className="flex items-center space-x-2">
             {user ? (
               <>
-                {/* Dark Mode Toggle - Admins Only */}
-                {user.isAdmin && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={toggleDarkMode}
-                    className="p-2"
-                    title={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
-                  >
-                    {isDarkMode ? (
-                      <Sun className="h-4 w-4" />
-                    ) : (
-                      <Moon className="h-4 w-4" />
-                    )}
-                  </Button>
-                )}
+                {/* Dark Mode Toggle - All Users */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={toggleDarkMode}
+                  className="p-2"
+                  title={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
+                >
+                  {isDarkMode ? (
+                    <Sun className="h-4 w-4" />
+                  ) : (
+                    <Moon className="h-4 w-4" />
+                  )}
+                </Button>
                 
                 <span className="text-sm text-bdo-navy hidden md:block">
                   {user.email} ({user.department})

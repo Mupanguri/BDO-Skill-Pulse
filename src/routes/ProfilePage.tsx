@@ -33,7 +33,7 @@ function ProfilePage() {
   const [imageFile, setImageFile] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string>('')
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
-  const { user, accessToken, isDarkMode, toggleDarkMode } = useAuth()
+  const { user, isDarkMode, toggleDarkMode } = useAuth()
 
   useEffect(() => {
     if (user) {
@@ -43,14 +43,12 @@ function ProfilePage() {
         darkMode: isDarkMode
       })
     }
-  }, [user, accessToken, isDarkMode])
+  }, [user, isDarkMode])
 
   const fetchUserProfile = async (email: string) => {
     try {
       const response = await fetch(`/api/user/${email}/profile`, {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        }
+        credentials: 'include'
       })
 
       if (response.ok) {
@@ -91,10 +89,8 @@ function ProfilePage() {
 
       const response = await fetch(`/api/user/${user?.email}/profile`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
-        },
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updateData)
       })
 
@@ -135,10 +131,8 @@ function ProfilePage() {
     try {
       const response = await fetch(`/api/user/${user?.email}/password`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
-        },
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           currentPassword: passwordForm.currentPassword,
           newPassword: passwordForm.newPassword
@@ -192,6 +186,21 @@ function ProfilePage() {
     setImagePreview('')
   }
 
+  const compressImage = (dataUrl: string): Promise<string> =>
+    new Promise((resolve) => {
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        const maxSize = 400
+        const ratio = Math.min(maxSize / img.width, maxSize / img.height, 1)
+        canvas.width = Math.round(img.width * ratio)
+        canvas.height = Math.round(img.height * ratio)
+        canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height)
+        resolve(canvas.toDataURL('image/jpeg', 0.7))
+      }
+      img.src = dataUrl
+    })
+
   const handleImageSave = async () => {
     if (!imageFile) return
 
@@ -199,19 +208,13 @@ function ProfilePage() {
     setMessage(null)
 
     try {
-      // In a real application, you would upload to a file storage service
-      // For now, we'll use a data URL as the profile image
-      const imageUrl = imagePreview
+      const compressed = await compressImage(imagePreview)
 
       const response = await fetch(`/api/user/${user?.email}/profile`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
-        },
-        body: JSON.stringify({
-          profileImage: imageUrl
-        })
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profileImage: compressed })
       })
 
       if (response.ok) {
@@ -243,8 +246,8 @@ function ProfilePage() {
         ]} />
         <div className="text-center py-12">
           <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Profile Not Found</h2>
-          <p className="text-gray-600">Unable to load your profile information.</p>
+          <h2 className="text-2xl font-bold dark:text-gray-100 mb-2" style={{ color: 'var(--ui-text)' }}>Profile Not Found</h2>
+          <p style={{ color: 'var(--ui-text-muted)' }}>Unable to load your profile information.</p>
         </div>
       </div>
     )
@@ -350,10 +353,10 @@ function ProfilePage() {
             {/* Email (Read-only) */}
             <div>
               <label className="ui-label">Email Address</label>
-              <div className="ui-field bg-gray-50 cursor-not-allowed">
+              <div className="ui-field bg-gray-50 dark:bg-gray-800 cursor-not-allowed">
                 <div className="flex items-center">
                   <Mail className="h-4 w-4 text-gray-400 mr-2" />
-                  <span className="text-gray-600">{userProfile.email}</span>
+                  <span style={{ color: 'var(--ui-text-muted)' }}>{userProfile.email}</span>
                 </div>
               </div>
             </div>
@@ -361,10 +364,10 @@ function ProfilePage() {
             {/* Department (Read-only) */}
             <div>
               <label className="ui-label">Department</label>
-              <div className="ui-field bg-gray-50 cursor-not-allowed">
+              <div className="ui-field bg-gray-50 dark:bg-gray-800 cursor-not-allowed">
                 <div className="flex items-center">
                   <Building className="h-4 w-4 text-gray-400 mr-2" />
-                  <span className="text-gray-600">{userProfile.department}</span>
+                  <span style={{ color: 'var(--ui-text-muted)' }}>{userProfile.department}</span>
                 </div>
               </div>
             </div>
@@ -373,18 +376,18 @@ function ProfilePage() {
             <div>
               <label className="ui-label">Appearance</label>
               <div className="space-y-3">
-                <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
+                <div className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
                   <div className="flex items-center">
                     <div className="flex-shrink-0">
                       {profileForm.darkMode ? (
-                        <Moon className="h-5 w-5 text-gray-600" />
+                        <Moon className="h-5 w-5" style={{ color: 'var(--ui-text-muted)' }} />
                       ) : (
-                        <Sun className="h-5 w-5 text-gray-600" />
+                        <Sun className="h-5 w-5" style={{ color: 'var(--ui-text-muted)' }} />
                       )}
                     </div>
                     <div className="ml-3">
-                      <p className="text-sm font-medium text-gray-900">Dark Mode</p>
-                      <p className="text-sm text-gray-500">Toggle between light and dark themes</p>
+                      <p className="text-sm font-medium" style={{ color: 'var(--ui-text)' }}>Dark Mode</p>
+                      <p className="text-sm" style={{ color: 'var(--ui-text-muted)' }}>Toggle between light and dark themes</p>
                     </div>
                   </div>
                   <button
@@ -538,7 +541,7 @@ function ProfilePage() {
           {/* Account Information Section */}
           <div className="ui-card-strong">
             <h3 className="text-lg font-semibold text-bdo-navy mb-4">Account Information</h3>
-            <div className="space-y-3 text-sm text-gray-600">
+            <div className="space-y-3 text-sm" style={{ color: 'var(--ui-text-muted)' }}>
               <div className="flex justify-between">
                 <span>Member Since:</span>
                 <span className="font-medium">{new Date(userProfile.createdAt).toLocaleDateString()}</span>
@@ -560,6 +563,7 @@ function ProfilePage() {
           </div>
         </div>
       </div>
+
     </div>
   )
 }

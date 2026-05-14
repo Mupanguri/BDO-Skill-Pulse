@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Users, Shield, UserPlus, UserMinus, Eye, Edit, Search, X, Download, LogOut } from 'lucide-react'
+import { Users, Shield, UserMinus, Eye, Search, X, Download, LogOut, UserPlus, Trash2 } from 'lucide-react'
 import Button from '../lib/components/Button'
 import Breadcrumb from '../lib/components/Breadcrumb'
 import LoadingSpinner from '../lib/components/LoadingSpinner'
@@ -11,32 +11,50 @@ interface User {
   email: string
   department: string
   isAdmin: boolean
+  isHR: boolean
   darkMode: boolean
   profileImage?: string
   displayName?: string
   createdAt: string
 }
 
-function UserManagementPage() {
+function UserManagementPage({ superAdminMode = false }: { superAdminMode?: boolean }) {
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedUser, setSelectedUser] = useState<User | null>(null)
+  const [userStats, setUserStats] = useState<{ quizzesTaken: number; avgScore: number; lastActivity: string | null } | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [filterDepartment, setFilterDepartment] = useState<string>('all')
   const [filterRole, setFilterRole] = useState<string>('all')
-  const { accessToken, logout } = useAuth()
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [createForm, setCreateForm] = useState({ email: '', department: 'Tax', password: '' })
+  const [createLoading, setCreateLoading] = useState(false)
+  const [createError, setCreateError] = useState('')
+  const { logout, user: currentUser } = useAuth()
+
+  const OFFICIAL_DEPARTMENTS = [
+    'Tax', 'Information Technology', 'Audit', 'Accounting Risk Advisory',
+    'Corporate Finance', 'Business Development', 'Human Resources'
+  ]
+
+  useEffect(() => { fetchUsers() }, [])
 
   useEffect(() => {
-    fetchUsers()
-  }, [accessToken])
+    if (!selectedUser) { setUserStats(null); return }
+    fetch(`/api/user/${selectedUser.email}/submissions`, { credentials: 'include' })
+      .then(r => r.ok ? r.json() : [])
+      .then((subs: any[]) => {
+        const taken = subs.length
+        const avg = taken > 0 ? Math.round(subs.reduce((s, r) => s + (r.score ?? 0), 0) / taken) : 0
+        const last = taken > 0 ? subs.sort((a, b) => new Date(b.submittedAt ?? b.createdAt).getTime() - new Date(a.submittedAt ?? a.createdAt).getTime())[0] : null
+        setUserStats({ quizzesTaken: taken, avgScore: avg, lastActivity: last ? (last.submittedAt ?? last.createdAt) : null })
+      })
+      .catch(() => setUserStats({ quizzesTaken: 0, avgScore: 0, lastActivity: null }))
+  }, [selectedUser])
 
   const fetchUsers = async () => {
     try {
-      const response = await fetch('/api/users', {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        }
-      })
+      const response = await fetch('/api/users', { credentials: 'include' })
 
       if (response.ok) {
         const data = await response.json()
@@ -59,10 +77,8 @@ function UserManagementPage() {
     try {
       const response = await fetch(`/api/user/${userEmail}/promote`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
-        },
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason })
       })
 
@@ -87,10 +103,8 @@ function UserManagementPage() {
     try {
       const response = await fetch(`/api/user/${userEmail}/demote`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
-        },
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason })
       })
 
@@ -105,6 +119,34 @@ function UserManagementPage() {
       console.error('Error demoting user:', error)
       alert('Error demoting user')
     }
+  }
+
+  const handleGrantHR = async (userEmail: string) => {
+    if (!confirm(`Grant HR oversight access to ${userEmail}? They will have full system visibility.`)) return
+    try {
+      const response = await fetch(`/api/user/${userEmail}/role`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isAdmin: true, isHR: true })
+      })
+      if (response.ok) { fetchUsers() }
+      else { const e = await response.json(); alert(e.error || 'Failed to grant HR access') }
+    } catch { alert('Error updating role') }
+  }
+
+  const handleRevokeHR = async (userEmail: string) => {
+    if (!confirm(`Revoke HR access from ${userEmail}? They will revert to standard Admin.`)) return
+    try {
+      const response = await fetch(`/api/user/${userEmail}/role`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isHR: false })
+      })
+      if (response.ok) { fetchUsers() }
+      else { const e = await response.json(); alert(e.error || 'Failed to revoke HR access') }
+    } catch { alert('Error updating role') }
   }
 
   const exportToExcel = () => {
@@ -128,6 +170,50 @@ function UserManagementPage() {
     a.download = 'user_management.csv'
     a.click()
     window.URL.revokeObjectURL(url)
+  }
+
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setCreateLoading(true)
+    setCreateError('')
+    try {
+      const res = await fetch('/api/users/create', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(createForm)
+      })
+      if (res.ok) {
+        setShowCreateModal(false)
+        setCreateForm({ email: '', department: 'Tax', password: '' })
+        fetchUsers()
+      } else {
+        const data = await res.json()
+        setCreateError(data.error || 'Failed to create user')
+      }
+    } catch {
+      setCreateError('Network error')
+    } finally {
+      setCreateLoading(false)
+    }
+  }
+
+  const handleDeleteUser = async (userEmail: string) => {
+    if (!confirm(`Permanently delete ${userEmail}? This cannot be undone.`)) return
+    try {
+      const res = await fetch(`/api/users/${encodeURIComponent(userEmail)}/delete`, {
+        method: 'DELETE',
+        credentials: 'include'
+      })
+      if (res.ok) {
+        fetchUsers()
+      } else {
+        const data = await res.json()
+        alert(data.error || 'Failed to delete user')
+      }
+    } catch {
+      alert('Network error')
+    }
   }
 
   // Apply filters
@@ -173,6 +259,12 @@ function UserManagementPage() {
           <p className="ui-page-subtitle">{filteredUsers.length} users</p>
         </div>
         <div className="flex gap-3">
+          {superAdminMode && (
+            <Button onClick={() => setShowCreateModal(true)} variant="primary" size="sm">
+              <UserPlus className="h-4 w-4 mr-2" aria-hidden="true" />
+              Create User
+            </Button>
+          )}
           <Button onClick={exportToExcel} variant="secondary" size="sm">
             <Download className="h-4 w-4 mr-2" aria-hidden="true" />
             Export CSV
@@ -292,22 +384,15 @@ function UserManagementPage() {
                       <div className="text-sm text-gray-600">{user.department}</div>
                     </td>
                     <td className="hidden md:table-cell px-6 py-4">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${user.isAdmin
-                          ? 'bg-purple-100 text-purple-800'
-                          : 'bg-green-100 text-green-800'
+                      <div className="flex flex-col gap-1">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          user.isHR ? 'bg-yellow-100 text-yellow-800' :
+                          user.isAdmin ? 'bg-purple-100 text-purple-800' : 'bg-green-100 text-green-800'
                         }`}>
-                        {user.isAdmin ? (
-                          <>
-                            <Shield className="h-3 w-3 mr-1" />
-                            Administrator
-                          </>
-                        ) : (
-                          <>
-                            <UserPlus className="h-3 w-3 mr-1" />
-                            User
-                          </>
-                        )}
-                      </span>
+                          <Shield className="h-3 w-3 mr-1" />
+                          {user.isHR ? 'HR Oversight' : user.isAdmin ? 'Administrator' : 'User'}
+                        </span>
+                      </div>
                     </td>
                     <td className="hidden lg:table-cell px-6 py-4">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${user.darkMode
@@ -358,12 +443,117 @@ function UserManagementPage() {
                             <span className="hidden sm:inline">Remove Admin</span>
                           </Button>
                         )}
+                        {superAdminMode && user.email !== currentUser?.email && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleDeleteUser(user.email)}
+                            aria-label={`Delete ${user.email}`}
+                            className="text-red-600 border-red-300 hover:bg-red-50"
+                          >
+                            <Trash2 className="h-4 w-4 sm:mr-1" aria-hidden="true" />
+                            <span className="hidden sm:inline">Delete</span>
+                          </Button>
+                        )}
+                        {currentUser?.isHR && user.email !== currentUser.email && (
+                          user.isHR ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleRevokeHR(user.email)}
+                              aria-label={`Revoke HR access from ${user.email}`}
+                              className="text-yellow-700 border-yellow-300 hover:bg-yellow-50"
+                            >
+                              <UserMinus className="h-4 w-4 sm:mr-1" aria-hidden="true" />
+                              <span className="hidden sm:inline">Revoke HR</span>
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleGrantHR(user.email)}
+                              aria-label={`Grant HR access to ${user.email}`}
+                              className="text-yellow-700 border-yellow-300 hover:bg-yellow-50"
+                            >
+                              <Shield className="h-4 w-4 sm:mr-1" aria-hidden="true" />
+                              <span className="hidden sm:inline">Grant HR</span>
+                            </Button>
+                          )
+                        )}
                       </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Create User Modal (super admin only) */}
+      {showCreateModal && (
+        <div
+          className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
+          onClick={() => { setShowCreateModal(false); setCreateError('') }}
+        >
+          <div
+            className="bg-white dark:bg-gray-800 rounded-2xl max-w-md w-full shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="create-user-title"
+          >
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+              <h2 id="create-user-title" className="text-xl font-bold text-bdo-navy dark:text-gray-100">Create New User</h2>
+              <button onClick={() => { setShowCreateModal(false); setCreateError('') }} className="text-gray-400 hover:text-gray-600 p-1 rounded-lg" aria-label="Close">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <form onSubmit={handleCreateUser} className="px-6 py-6 space-y-4">
+              {createError && (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-3">
+                  <p className="text-sm text-red-700 dark:text-red-300">{createError}</p>
+                </div>
+              )}
+              <div>
+                <label className="ui-label">Email Address</label>
+                <input
+                  type="email"
+                  required
+                  className="ui-field w-full"
+                  placeholder="user@bdo.co.zw"
+                  value={createForm.email}
+                  onChange={(e) => setCreateForm(f => ({ ...f, email: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="ui-label">Department</label>
+                <select
+                  required
+                  className="ui-field w-full"
+                  value={createForm.department}
+                  onChange={(e) => setCreateForm(f => ({ ...f, department: e.target.value }))}
+                >
+                  {OFFICIAL_DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="ui-label">Temporary Password</label>
+                <input
+                  type="password"
+                  required
+                  className="ui-field w-full"
+                  placeholder="Min 8 chars, upper, lower, number, special"
+                  value={createForm.password}
+                  onChange={(e) => setCreateForm(f => ({ ...f, password: e.target.value }))}
+                />
+                <p className="text-xs text-gray-500 mt-1">User should change this on first login.</p>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <Button type="button" variant="outline" onClick={() => { setShowCreateModal(false); setCreateError('') }} className="flex-1">Cancel</Button>
+                <Button type="submit" variant="primary" loading={createLoading} className="flex-1">Create User</Button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -477,44 +667,38 @@ function UserManagementPage() {
                       Remove from Admin
                     </Button>
                   )}
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => {
-                      // Navigate to user's profile page
-                      window.open(`/app/profile/${selectedUser.email}`, '_blank')
-                      setSelectedUser(null)
-                    }}
-                  >
-                    <Edit className="h-4 w-4 mr-2" aria-hidden="true" />
-                    View Profile
-                  </Button>
                 </div>
               </div>
 
-              {/* User Statistics (Placeholder for future implementation) */}
+              {/* User Statistics */}
               <div>
-                <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">Statistics</h3>
+                <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase mb-3">Statistics</h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="ui-card p-4">
-                    <p className="text-xs text-gray-600 mb-1">Quizzes Taken</p>
-                    <p className="text-2xl font-bold text-bdo-navy">-</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Quizzes Taken</p>
+                    <p className="text-2xl font-bold text-bdo-navy dark:text-gray-100">
+                      {userStats ? userStats.quizzesTaken : '…'}
+                    </p>
                   </div>
                   <div className="ui-card p-4">
-                    <p className="text-xs text-gray-600 mb-1">Average Score</p>
-                    <p className="text-2xl font-bold text-bdo-navy">-</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Average Score</p>
+                    <p className={`text-2xl font-bold ${userStats && userStats.quizzesTaken > 0 ? (userStats.avgScore >= 45 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400') : 'text-bdo-navy dark:text-gray-100'}`}>
+                      {userStats ? (userStats.quizzesTaken > 0 ? `${userStats.avgScore}%` : 'N/A') : '…'}
+                    </p>
                   </div>
                   <div className="ui-card p-4">
-                    <p className="text-xs text-gray-600 mb-1">Last Activity</p>
-                    <p className="text-2xl font-bold text-bdo-navy">-</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Last Activity</p>
+                    <p className="text-sm font-semibold text-bdo-navy dark:text-gray-100">
+                      {userStats ? (userStats.lastActivity ? new Date(userStats.lastActivity).toLocaleDateString() : 'Never') : '…'}
+                    </p>
                   </div>
                 </div>
-                <p className="text-xs text-gray-500 mt-2">Note: Statistics will be available in future updates</p>
               </div>
             </div>
           </div>
         </div>
       )}
+
     </div>
   )
 }

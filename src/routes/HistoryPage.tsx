@@ -151,12 +151,13 @@ function HistoryPage() {
     return <LoadingSpinner text="Loading your quiz history..." />
   }
 
-  // Prepare chart data for trend visualization
+  // Prepare chart data for trend visualization — sort ascending by date
+  const sortedResults = [...results].sort((a, b) => new Date(a.completedAt).getTime() - new Date(b.completedAt).getTime())
   const trendChartData = {
-    labels: results.map(r => new Date(r.completedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })),
+    labels: sortedResults.map(r => new Date(r.completedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })),
     datasets: [{
       label: 'Score %',
-      data: results.map(r => r.score),
+      data: sortedResults.map(r => r.score),
       borderColor: '#0066CC',
       backgroundColor: 'rgba(0, 102, 204, 0.1)',
       tension: 0.4,
@@ -246,7 +247,7 @@ function HistoryPage() {
               <div className="ui-card p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-gray-600 mb-1">Total Quizzes</p>
+                    <p className="text-sm mb-1" style={{ color: 'var(--ui-text-muted)' }}>Total Quizzes</p>
                     <p className="text-3xl font-bold text-bdo-navy">{stats.totalQuizzes}</p>
                   </div>
                   <div className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center">
@@ -258,7 +259,7 @@ function HistoryPage() {
               <div className="ui-card p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-gray-600 mb-1">Average Score</p>
+                    <p className="text-sm mb-1" style={{ color: 'var(--ui-text-muted)' }}>Average Score</p>
                     <p className={`text-3xl font-bold ${getScoreColor(stats.averageScore)}`}>
                       {stats.averageScore}%
                     </p>
@@ -275,7 +276,7 @@ function HistoryPage() {
               <div className="ui-card p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-gray-600 mb-1">Best Score</p>
+                    <p className="text-sm mb-1" style={{ color: 'var(--ui-text-muted)' }}>Best Score</p>
                     <p className={`text-3xl font-bold ${getScoreColor(stats.bestScore)}`}>
                       {stats.bestScore}%
                     </p>
@@ -289,7 +290,7 @@ function HistoryPage() {
               <div className="ui-card p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-gray-600 mb-1">Avg. Time</p>
+                    <p className="text-sm mb-1" style={{ color: 'var(--ui-text-muted)' }}>Avg. Time</p>
                     <p className="text-3xl font-bold text-bdo-navy">
                       {Math.floor(stats.averageTime / 60)}:{(stats.averageTime % 60).toString().padStart(2, '0')}
                     </p>
@@ -309,17 +310,17 @@ function HistoryPage() {
                 <h3 className="text-lg font-bold text-bdo-navy mb-4">Performance Insights</h3>
                 <div className="space-y-3">
                   <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-600">Improvement Trend</span>
+                    <span className="text-sm" style={{ color: 'var(--ui-text-muted)' }}>Improvement Trend</span>
                     <span className={`text-sm font-semibold ${stats.improvement >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                       {stats.improvement >= 0 ? '+' : ''}{stats.improvement}%
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-600">Consistency Score</span>
+                    <span className="text-sm" style={{ color: 'var(--ui-text-muted)' }}>Consistency Score</span>
                     <span className="text-sm font-semibold text-bdo-blue">{stats.consistency}%</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-600">Performance Level</span>
+                    <span className="text-sm" style={{ color: 'var(--ui-text-muted)' }}>Performance Level</span>
                     <span className={`text-sm font-semibold ${getScoreColor(stats.averageScore)}`}>
                       {getPerformanceLevel(stats.averageScore)}
                     </span>
@@ -328,26 +329,37 @@ function HistoryPage() {
               </div>
 
               <div className="ui-card-strong">
-                <h3 className="text-lg font-bold text-bdo-navy mb-4">Next Goals</h3>
+                <h3 className="text-lg font-bold text-bdo-navy dark:text-gray-100 mb-4">Personalised Advice</h3>
                 <div className="space-y-3">
-                  <div className="flex items-start gap-3">
-                    <Target className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" aria-hidden="true" />
-                    <div>
-                      <p className="text-sm font-semibold text-bdo-navy">Score Target</p>
-                      <p className="text-xs text-gray-600">
-                        Aim for {Math.max(80, stats.averageScore + 5)}% on your next quiz
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <Clock className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" aria-hidden="true" />
-                    <div>
-                      <p className="text-sm font-semibold text-bdo-navy">Time Efficiency</p>
-                      <p className="text-xs text-gray-600">
-                        Try to complete quizzes in under {Math.floor(stats.averageTime / 60) + 1} minutes
-                      </p>
-                    </div>
-                  </div>
+                  {(() => {
+                    const avg = stats.averageScore
+                    const trend = stats.improvement
+                    const recent = results.slice(0, 3).map(r => r.score)
+                    const recentFails = recent.filter(s => s < 60).length
+                    const tips: { icon: string; title: string; body: string }[] = []
+
+                    if (avg >= 85) tips.push({ icon: '🎯', title: 'Maintain Excellence', body: "You're consistently scoring in the top tier. Focus on 100% accuracy in your weakest quiz." })
+                    else if (avg >= 70) tips.push({ icon: '📈', title: 'Push to Distinction', body: `You're ${85 - avg}% away from the top tier. Review the questions you've missed most.` })
+                    else if (avg >= 60) tips.push({ icon: '📚', title: 'Build Consistency', body: 'Your scores are passing but variable. Aim to score above 70% on your next two quizzes.' })
+                    else tips.push({ icon: '🔄', title: 'Focus on Fundamentals', body: 'Scores below 60% flag your account for review. Revisit the study material before your next quiz.' })
+
+                    if (trend > 10) tips.push({ icon: '🚀', title: 'Strong Improvement', body: `+${trend}% trend across your attempts. Keep this momentum going.` })
+                    else if (trend < -5) tips.push({ icon: '⚠️', title: 'Declining Trend', body: 'Recent scores are lower than earlier attempts. Consider reviewing material before your next quiz.' })
+
+                    if (recentFails >= 2) tips.push({ icon: '⏱️', title: 'Check Time Pressure', body: 'Multiple recent low scores — if you are running out of time, practise faster recall of key concepts.' })
+
+                    if (stats.averageTime > 1800) tips.push({ icon: '⚡', title: 'Speed Up', body: `Your average completion time is ${Math.round(stats.averageTime / 60)} min. Aim for under ${Math.max(5, Math.round(stats.averageTime / 60) - 5)} min.` })
+
+                    return tips.map((tip, i) => (
+                      <div key={i} className="flex items-start gap-3 p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+                        <span className="text-xl flex-shrink-0" role="img" aria-hidden="true">{tip.icon}</span>
+                        <div>
+                          <p className="text-sm font-semibold text-bdo-navy dark:text-gray-100">{tip.title}</p>
+                          <p className="text-xs mt-0.5" style={{ color: 'var(--ui-text-muted)' }}>{tip.body}</p>
+                        </div>
+                      </div>
+                    ))
+                  })()}
                 </div>
               </div>
             </div>
@@ -422,6 +434,7 @@ function HistoryPage() {
           </div>
         </>
       )}
+
     </div>
   )
 }

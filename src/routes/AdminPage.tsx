@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { Plus, BarChart3, Play, Pause, Shield, AlertCircle, TrendingUp, LogOut } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Plus, BarChart3, Play, Pause, Shield, AlertCircle } from 'lucide-react'
 import Button from '../lib/components/Button'
 import { useAuth } from '../lib/contexts/AuthContext'
 
@@ -11,122 +11,55 @@ interface QuizSession {
   time: string
   isActive: boolean
   createdAt: string
-  _count?: {
-    responses: number
-  }
+  createdBy?: string
+  department?: string
+  _count?: { responses: number }
+  canViewMetrics?: boolean
 }
 
 function AdminPage() {
   const [sessions, setSessions] = useState<QuizSession[]>([])
   const [loading, setLoading] = useState(true)
-  const [sessionExpired, setSessionExpired] = useState(false)
-  const { accessToken, refreshAccessToken, logout } = useAuth()
-  const navigate = useNavigate()
+  const [error, setError] = useState('')
+  const { user } = useAuth()
 
   useEffect(() => {
     fetchSessions()
-  }, [accessToken])
+  }, [])
 
   const fetchSessions = async () => {
-    if (!accessToken) return
-
     try {
-      const response = await fetch('/api/sessions', {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        }
-      })
+      const response = await fetch('/api/sessions', { credentials: 'include' })
       if (response.ok) {
         const data = await response.json()
         setSessions(data)
-      } else if (response.status === 401) {
-        // Try to refresh token and retry
-        const refreshed = await refreshAccessToken()
-        if (refreshed) {
-          // Retry with new token
-          const newResponse = await fetch('/api/sessions', {
-            headers: {
-              'Authorization': `Bearer ${accessToken}`
-            }
-          })
-          if (newResponse.ok) {
-            const data = await newResponse.json()
-            setSessions(data)
-          }
-        } else {
-          setSessionExpired(true)
-        }
+      } else {
+        setError('Failed to load sessions')
       }
-    } catch (error) {
-      console.error('Failed to fetch sessions:', error)
+    } catch {
+      setError('Network error. Please try again.')
     } finally {
       setLoading(false)
     }
   }
 
   const toggleSessionStatus = async (sessionId: string, isActive: boolean) => {
-    if (!accessToken) return
-
     try {
-      console.log(`Toggling session ${sessionId} from ${isActive} to ${!isActive}`)
       const response = await fetch(`/api/sessions/${sessionId}`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
-        },
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ isActive: !isActive }),
       })
-
-      console.log('Response status:', response.status)
-      const data = await response.json()
-      console.log('Response data:', data)
-
       if (response.ok) {
-        console.log('Session updated successfully')
-        // Refresh sessions list
-        fetchSessions()
-      } else if (response.status === 401) {
-        // Try to refresh token and retry
-        const refreshed = await refreshAccessToken()
-        if (refreshed) {
-          // Retry with new token
-          const newResponse = await fetch(`/api/sessions/${sessionId}`, {
-            method: 'PATCH',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${accessToken}`
-            },
-            body: JSON.stringify({ isActive: !isActive }),
-          })
-          if (newResponse.ok) {
-            console.log('Session updated successfully after token refresh')
-            fetchSessions()
-          }
-        } else {
-          setSessionExpired(true)
-        }
+        setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, isActive: !isActive } : s))
       } else {
-        console.error('Failed to update session:', data)
+        const data = await response.json()
+        alert(data.error || 'Failed to update session')
       }
-    } catch (error) {
-      console.error('Failed to toggle session status:', error)
+    } catch {
+      alert('Network error updating session')
     }
-  }
-
-  if (sessionExpired) {
-    return (
-      <div className="text-center py-12">
-        <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Session Expired</h2>
-        <p className="text-gray-600 mb-6">
-          Your session has expired. Please log in again to continue.
-        </p>
-        <Button onClick={() => navigate('/login')}>
-          Go to Login
-        </Button>
-      </div>
-    )
   }
 
   if (loading) {
@@ -137,17 +70,28 @@ function AdminPage() {
     )
   }
 
+  if (error) {
+    return (
+      <div className="text-center py-12">
+        <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+        <h2 className="text-2xl font-bold mb-2" style={{ color: 'var(--ui-text)' }}>Error</h2>
+        <p className="mb-6" style={{ color: 'var(--ui-text-muted)' }}>{error}</p>
+        <Button onClick={fetchSessions}>Try Again</Button>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold text-bdo-navy">BDO Skills Pulse - Admin Dashboard</h1>
-        <div className="flex gap-3">
-          <Link to="/app/admin/analytics">
-            <Button variant="outline">
-              <TrendingUp className="h-4 w-4 mr-2" />
-              Analytics
-            </Button>
-          </Link>
+      {/* Header */}
+      <div className="flex flex-wrap gap-3 justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold text-bdo-navy dark:text-gray-100">{user?.isHR ? 'HR Dashboard' : 'Admin Dashboard'}</h1>
+          <p className="text-gray-600 dark:text-gray-400 mt-1">
+            Welcome, {user?.email} — manage quiz sessions and monitor performance
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-3">
           <Link to="/app/admin/audit-logs">
             <Button variant="outline">
               <Shield className="h-4 w-4 mr-2" />
@@ -157,93 +101,108 @@ function AdminPage() {
           <Link to="/app/admin/create">
             <Button>
               <Plus className="h-4 w-4 mr-2" />
-              Create New Session
+              Create Session
             </Button>
           </Link>
-          <Button variant="outline" onClick={logout}>
-            <LogOut className="h-4 w-4 mr-2" />
-            Logout
-          </Button>
         </div>
       </div>
 
-      <div className="bg-white rounded-lg shadow-md">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h2 className="text-xl font-semibold text-bdo-navy">Quiz Sessions</h2>
+      {/* Stats Row */}
+      <div className="ui-grid-stats">
+        {[
+          { label: 'Total Sessions', value: sessions.length, color: 'text-bdo-navy dark:text-blue-300' },
+          { label: 'Active Sessions', value: sessions.filter(s => s.isActive).length, color: 'text-green-600 dark:text-green-400' },
+          { label: 'Inactive Sessions', value: sessions.filter(s => !s.isActive).length, color: 'text-gray-500 dark:text-gray-400' },
+          {
+            label: 'Total Responses',
+            value: sessions.reduce((sum, s) => sum + (s._count?.responses ?? 0), 0),
+            color: 'text-bdo-red'
+          },
+        ].map(({ label, value, color }) => (
+          <div key={label} className="ui-card">
+            <p className="text-sm font-medium" style={{ color: 'var(--ui-text-muted)' }}>{label}</p>
+            <p className={`text-3xl font-bold mt-1 ${color}`}>{value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Sessions Table */}
+      <div className="ui-card p-0 overflow-hidden">
+        <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: 'var(--ui-border)' }}>
+          <h2 className="text-xl font-semibold text-bdo-navy dark:text-gray-100">Quiz Sessions</h2>
+          <span className="text-sm" style={{ color: 'var(--ui-text-muted)' }}>{sessions.length} total</span>
         </div>
 
-        <div className="p-6">
-          {sessions.length === 0 ? (
-            <div className="text-center py-8">
-              <p className="text-gray-500 mb-4">No quiz sessions created yet.</p>
-              <Link to="/app/admin/create">
-                <Button>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Create Your First Session
-                </Button>
-              </Link>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {sessions.map((session) => (
-                <div key={session.id} className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
-                  <div className="flex-1">
-                    <h3 className="text-lg font-semibold text-bdo-navy">{session.name}</h3>
-                    <p className="text-gray-600">
-                      {new Date(session.date).toLocaleDateString()} at {session.time}
-                    </p>
-                    <p className="text-sm text-gray-500">
-                      Created: {new Date(session.createdAt).toLocaleDateString()}
-                      {(session as any).createdBy && <> by {(session as any).createdBy}</>}
-                      {(session as any).department && <> • {(session as any).department}</>}
-                    </p>
-                    <p className="text-sm text-gray-500">
-                      {(session as any)._count?.responses || 0} participants completed
-                    </p>
-                  </div>
+        {sessions.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="mb-4" style={{ color: 'var(--ui-text-muted)' }}>No quiz sessions created yet.</p>
+            <Link to="/app/admin/create">
+              <Button>
+                <Plus className="h-4 w-4 mr-2" />
+                Create Your First Session
+              </Button>
+            </Link>
+          </div>
+        ) : (
+          <div className="divide-y" style={{ borderColor: 'var(--ui-border)' }}>
+            {sessions.map((session) => (
+              <div
+                key={session.id}
+                className="flex flex-wrap items-center justify-between gap-4 px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+              >
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-base font-semibold text-bdo-navy dark:text-gray-100 truncate">
+                    {session.name}
+                  </h3>
+                  <p className="text-sm mt-0.5" style={{ color: 'var(--ui-text-muted)' }}>
+                    {new Date(session.date).toLocaleDateString()} at {session.time}
+                    {session.department && <> &bull; {session.department}</>}
+                  </p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--ui-text-muted)' }}>
+                    Created {new Date(session.createdAt).toLocaleDateString()}
+                    {session.createdBy && <> by {session.createdBy}</>}
+                    {' '}&bull; {session._count?.responses ?? 0} participants
+                  </p>
+                </div>
 
-                  <div className="flex items-center space-x-3">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${session.isActive
-                      ? 'bg-green-100 text-green-800'
-                      : 'bg-gray-100 text-gray-800'
-                      }`}>
-                      {session.isActive ? 'Active' : 'Inactive'}
-                    </span>
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    session.isActive
+                      ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                      : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
+                  }`}>
+                    {session.isActive ? 'Active' : 'Inactive'}
+                  </span>
 
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => toggleSessionStatus(session.id, session.isActive)}
-                    >
-                      {session.isActive ? (
-                        <>
-                          <Pause className="h-4 w-4 mr-1" />
-                          Deactivate
-                        </>
-                      ) : (
-                        <>
-                          <Play className="h-4 w-4 mr-1" />
-                          Activate
-                        </>
-                      )}
-                    </Button>
+                  <Button variant="outline" size="sm" onClick={() => toggleSessionStatus(session.id, session.isActive)}>
+                    {session.isActive ? (
+                      <><Pause className="h-4 w-4 mr-1" />Deactivate</>
+                    ) : (
+                      <><Play className="h-4 w-4 mr-1" />Activate</>
+                    )}
+                  </Button>
 
+                  {session.canViewMetrics !== false ? (
                     <Link to={`/app/admin/results?session=${session.id}`}>
                       <Button variant="outline" size="sm">
                         <BarChart3 className="h-4 w-4 mr-1" />
                         Results
                       </Button>
                     </Link>
-                  </div>
+                  ) : (
+                    <Button variant="outline" size="sm" disabled title="You can only view results for quizzes you created">
+                      <BarChart3 className="h-4 w-4 mr-1" />
+                      Locked
+                    </Button>
+                  )}
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
 export default AdminPage
-

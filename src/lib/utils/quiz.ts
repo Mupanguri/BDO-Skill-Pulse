@@ -1,3 +1,26 @@
+// Deterministic seeded shuffle — same seed always produces same order
+export function seededShuffle<T>(arr: T[], seed: string): T[] {
+  let h = 0
+  for (let i = 0; i < seed.length; i++) h = (Math.imul(31, h) + seed.charCodeAt(i)) | 0
+  const a = [...arr]
+  for (let i = a.length - 1; i > 0; i--) {
+    h = (Math.imul(h, 1664525) + 1013904223) | 0
+    const j = Math.abs(h) % (i + 1);
+    [a[i], a[j]] = [a[j], a[i]]
+  }
+  return a
+}
+
+// Reorder questions to match a saved question-ID order array
+export function reorderByIds<T extends { id: string }>(arr: T[], ids: string[]): T[] {
+  const map = new Map(arr.map(q => [q.id, q]))
+  const ordered = ids.map(id => map.get(id)).filter(Boolean) as T[]
+  // Append any questions not in the saved order (e.g., newly added)
+  const idSet = new Set(ids)
+  arr.forEach(q => { if (!idSet.has(q.id)) ordered.push(q) })
+  return ordered
+}
+
 import type { Question, QuizSession } from '$lib/stores/sessions';
 
 // Shuffle array using Fisher-Yates algorithm

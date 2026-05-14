@@ -34,18 +34,13 @@ This will:
 
 ### 3. Default Credentials
 
-After initialization, you'll have the following default users:
+After initialization, the system creates an admin user at `admin@bdo.co.zw` and sample
+department users for tax, audit, consulting, IT, and finance departments.
 
-**Admin User:**
-- Email: `admin@bdo.co.zw`
-- Password: `Admin2024!` (Change this in production!)
-
-**Sample Department Users:**
-- `tax@bdo.co.zw` / `Password123!`
-- `audit@bdo.co.zw` / `Password123!`
-- `consulting@bdo.co.zw` / `Password123!`
-- `it@bdo.co.zw` / `Password123!`
-- `finance@bdo.co.zw` / `Password123!`
+**IMPORTANT:** Default passwords are not documented here for security reasons.
+- Use `create-admin.sql` to create the admin with a bcrypt hash you generate locally.
+- Force all seeded users to change their password on first login.
+- Never share or commit passwords in any file.
 
 ## Database Tables
 

@@ -5,19 +5,34 @@ interface ProtectedRouteProps {
   children: React.ReactNode
   requireAuth?: boolean
   requireAdmin?: boolean
+  requireSuperAdmin?: boolean
 }
 
-function ProtectedRoute({ children, requireAuth = true, requireAdmin = false }: ProtectedRouteProps) {
-  const { user } = useAuth()
+function ProtectedRoute({ children, requireAuth = true, requireAdmin = false, requireSuperAdmin = false }: ProtectedRouteProps) {
+  const { user, portalMode } = useAuth()
   const location = useLocation()
 
   if (requireAuth && !user) {
-    // Redirect to login page with return url
     return <Navigate to="/login" state={{ from: location }} replace />
   }
 
-  if (requireAdmin && (!user || !user.isAdmin)) {
-    // Redirect to dashboard if user is logged in but not admin
+  // Privileged users must select a portal before accessing any route except portal-select itself
+  if (user && (user.isAdmin || user.isHR || user.isSuperAdmin) && portalMode === null && !location.pathname.includes('/portal-select')) {
+    return <Navigate to="/app/portal-select" replace />
+  }
+
+  // Super admin routes: require isSuperAdmin
+  if (requireSuperAdmin && !user?.isSuperAdmin) {
+    return <Navigate to="/app/portal-select" replace />
+  }
+
+  // Admin routes: require admin privilege
+  if (requireAdmin && (!user || (!user.isAdmin && !user.isHR))) {
+    return <Navigate to="/app/dashboard" replace />
+  }
+
+  // Admin routes: blocked when the user chose the User portal
+  if (requireAdmin && portalMode === 'user') {
     return <Navigate to="/app/dashboard" replace />
   }
 
@@ -25,4 +40,3 @@ function ProtectedRoute({ children, requireAuth = true, requireAdmin = false }: 
 }
 
 export default ProtectedRoute
-

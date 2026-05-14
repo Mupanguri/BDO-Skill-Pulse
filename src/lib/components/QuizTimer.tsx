@@ -7,6 +7,7 @@ interface QuizTimerProps {
   sessionId?: string
   userEmail?: string
   className?: string
+  paused?: boolean
 }
 
 function QuizTimer({
@@ -15,7 +16,8 @@ function QuizTimer({
   onAutoSave,
   sessionId,
   userEmail,
-  className = ''
+  className = '',
+  paused = false
 }: QuizTimerProps) {
   const [timeLeft, setTimeLeft] = useState(duration)
   const [isRunning, setIsRunning] = useState(true)
@@ -50,7 +52,7 @@ function QuizTimer({
   }
 
   useEffect(() => {
-    if (!isRunning || timeLeft <= 0) return
+    if (!isRunning || timeLeft <= 0 || paused) return
 
     const timer = setInterval(() => {
       setTimeLeft(prev => {

@@ -1,8 +1,9 @@
 -- BDO Quiz System - Create Admin User
 -- Run this in Supabase SQL Editor
 
--- This script creates an admin user with password 'Admin2024!'
--- The password is pre-hashed using bcrypt (10 rounds)
+-- IMPORTANT: Replace the hash on line 20 with one you generate locally BEFORE running:
+--   node -e "const b=require('bcrypt'); b.hash('YourNewPassword',10).then(console.log)"
+-- Never commit or share plaintext passwords in any file.
 
 INSERT INTO "User" (
   id, 

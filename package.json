@@ -9,21 +9,30 @@
     "check": "tsc --noEmit",
     "server": "node --no-deprecation server.js",
     "init-db": "node init_database.js",
-    "dev:full": "concurrently \"npm run server\" \"npm run dev\""
+    "dev:full": "concurrently \"npm run backend\" \"npm run dev\"",
+    "backend": "cd backend && node src/server.js",
+    "screenshot": "playwright test screenshot-tour.spec.ts --reporter=list",
+    "seed-users": "node scripts/seed-users.js"
   },
   "dependencies": {
     "@libsql/client": "^0.17.0",
     "@playwright/test": "^1.58.2",
     "@prisma/adapter-libsql": "^7.3.0",
     "@prisma/client": "^7.2.0",
+    "@radix-ui/react-switch": "^1.2.6",
+    "@radix-ui/themes": "^3.3.0",
     "@vitejs/plugin-react": "^4.3.3",
     "autoprefixer": "^10.4.23",
     "bcrypt": "^5.1.1",
     "chart.js": "^4.5.1",
     "concurrently": "^9.2.1",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
+    "csrf-csrf": "^4.0.3",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.4.1",
+    "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
     "lucide-react": "^0.468.0",
     "pg": "^8.18.0",
@@ -36,7 +45,8 @@
     "sqlite3": "^5.1.7",
     "tailwindcss": "^3.4.19",
     "typescript": "^5.6.3",
-    "vite": "^4.5.5"
+    "vite": "^4.5.5",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",

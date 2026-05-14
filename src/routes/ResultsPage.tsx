@@ -51,6 +51,25 @@ interface QuizSession {
   date: string
   questions: any[]
   responses: QuizResponse[]
+  canViewMetrics?: boolean
+  createdBy?: string
+}
+
+interface AnalyticsSummary {
+  totalSessions: number
+  totalResponses: number
+  averageScore: number
+  sessionsByDepartment: Record<string, number>
+  responsesByDepartment: Record<string, number>
+  scoreDistribution: Record<string, number>
+  recentActivity: Array<{
+    id: string
+    sessionId: string
+    score: number
+    timeSpent: number
+    completedAt: string
+    user: { email: string; department: string }
+  }>
 }
 
 interface DepartmentStats {
@@ -69,7 +88,7 @@ interface DepartmentStats {
 
 function ResultsPage() {
   const [searchParams] = useSearchParams()
-  const { user } = useAuth()
+  const { user, portalMode } = useAuth()
   const navigate = useNavigate()
   const sessionId = searchParams.get('session')
   const isReviewMode = searchParams.get('review') === 'true'
@@ -100,20 +119,29 @@ function ResultsPage() {
     failCount: 0
   })
 
+  const [analyticsSummary, setAnalyticsSummary] = useState<AnalyticsSummary | null>(null)
+
   // Feedback modal state
   const [showFeedbackModal, setShowFeedbackModal] = useState(false)
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false)
   const [submittingFeedback, setSubmittingFeedback] = useState(false)
 
   useEffect(() => {
-    // If no session ID, redirect to dashboard
-    if (!sessionId) {
+    if (user?.isAdmin || user?.isHR) {
+      fetch('/api/analytics?timeRange=all', { credentials: 'include' })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => { if (data) setAnalyticsSummary(data) })
+        .catch(() => {})
+    }
+  }, [user?.isAdmin, user?.isHR])
+
+  useEffect(() => {
+    if (!sessionId && !user?.isAdmin && !user?.isHR) {
       navigate('/app/dashboard')
       return
     }
-    
     fetchAllSessions()
-  }, [navigate, sessionId])
+  }, [navigate, sessionId, user?.isAdmin, user?.isHR])
 
   useEffect(() => {
     if (sessionId) {
@@ -194,7 +222,7 @@ function ResultsPage() {
 
   const fetchAllSessions = async () => {
     try {
-      const response = await fetch('/api/sessions')
+      const response = await fetch('/api/sessions', { credentials: 'include' })
       if (response.ok) {
         const data = await response.json()
         setAllSessions(data)
@@ -338,8 +366,8 @@ function ResultsPage() {
     return (
       <div className="text-center py-12">
         <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Session Expired</h2>
-        <p className="text-gray-600 mb-6">
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">Session Expired</h2>
+        <p className="text-gray-600 dark:text-gray-400 mb-6">
           Your session has expired. Please log in again to continue.
         </p>
         <Button onClick={() => navigate('/login')}>
@@ -495,15 +523,21 @@ function ResultsPage() {
                     No quiz sessions available
                   </div>
                 ) : (
-                  allSessions.map((s) => (
+                  allSessions.map((s) => {
+                    const canView = s.canViewMetrics !== false
+                    return (
                     <button
                       key={s.id}
                       onClick={() => {
+                        if (!canView) return
                         navigate(`/app/admin/results?session=${s.id}`)
                         setShowSessionDropdown(false)
                       }}
-                      className={`w-full text-left p-4 hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 last:border-b-0 transition-colors ${s.id === sessionId ? 'bg-blue-50 dark:bg-blue-900/20' : ''
-                        }`}
+                      disabled={!canView}
+                      className={`w-full text-left p-4 border-b border-gray-100 dark:border-gray-700 last:border-b-0 transition-colors ${
+                        !canView ? 'opacity-50 cursor-not-allowed' :
+                        'hover:bg-gray-50 dark:hover:bg-gray-700'
+                      } ${s.id === sessionId ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
                     >
                       <div className="flex items-center justify-between">
                         <div>
@@ -525,7 +559,7 @@ function ResultsPage() {
                         </div>
                       </div>
                     </button>
-                  ))
+                  )})
                 )}
               </div>
             )}
@@ -537,43 +571,128 @@ function ResultsPage() {
           <div>
             <h3 className="text-lg font-semibold text-bdo-navy mb-4">Recent Quiz Sessions</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {allSessions.slice(0, 6).map((s) => (
-                <div
-                  key={s.id}
-                  onClick={() => navigate(`/app/admin/results?session=${s.id}`)}
-                  className="ui-card p-4 cursor-pointer hover:shadow-lg transition-all hover:border-bdo-blue border-2 border-transparent hover:border-bdo-blue"
-                >
-                  <div className="flex items-start justify-between mb-3">
-                    <h4 className="font-semibold text-bdo-navy line-clamp-2">{s.name}</h4>
-                    <span className={`text-xs px-2 py-1 rounded-full flex-shrink-0 ${s.isActive
-                      ? 'bg-green-100 text-green-700'
-                      : 'bg-gray-100 text-gray-600'
-                      }`}>
-                      {s.isActive ? 'Active' : 'Closed'}
-                    </span>
+              {allSessions.slice(0, 6).map((s) => {
+                const canView = s.canViewMetrics !== false
+                return (
+                  <div
+                    key={s.id}
+                    onClick={() => canView && navigate(`/app/admin/results?session=${s.id}`)}
+                    className={`ui-card p-4 transition-all border-2 border-transparent ${
+                      canView
+                        ? 'cursor-pointer hover:shadow-lg hover:border-bdo-blue'
+                        : 'opacity-60 cursor-not-allowed'
+                    }`}
+                    title={canView ? undefined : 'You can only view results for quizzes you created'}
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <h4 className="font-semibold text-bdo-navy line-clamp-2">{s.name}</h4>
+                      <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                        <span className={`text-xs px-2 py-1 rounded-full ${s.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                          {s.isActive ? 'Active' : 'Closed'}
+                        </span>
+                        {!canView && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">Locked</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="space-y-2 text-sm text-gray-600">
+                      <div className="flex items-center gap-2">
+                        <BarChart3 className="h-4 w-4" />
+                        <span>{new Date(s.date).toLocaleDateString()}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Users className="h-4 w-4" />
+                        <span>{s._count?.responses || 0} participants</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Trophy className="h-4 w-4" />
+                        <span>{s.questions?.length || 0} questions</span>
+                      </div>
+                      {s.createdBy && (
+                        <p className="text-xs text-gray-400 truncate">by {s.createdBy}</p>
+                      )}
+                    </div>
                   </div>
-                  <div className="space-y-2 text-sm text-gray-600">
-                    <div className="flex items-center gap-2">
-                      <BarChart3 className="h-4 w-4" />
-                      <span>{new Date(s.date).toLocaleDateString()}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Users className="h-4 w-4" />
-                      <span>{s._count?.responses || 0} participants</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Trophy className="h-4 w-4" />
-                      <span>{s.questions?.length || 0} questions</span>
-                    </div>
-                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Analytics summary on overview page */}
+        {(user?.isAdmin || user?.isHR) && analyticsSummary && (
+          <div className="space-y-6 mt-8">
+            <h2 className="text-2xl font-bold text-bdo-navy dark:text-gray-100">Overall Analytics</h2>
+            <div className="ui-grid-stats">
+              <div className="ui-card p-6">
+                <p className="text-sm font-medium" style={{ color: 'var(--ui-text-muted)' }}>Total Sessions</p>
+                <p className="text-3xl font-bold text-bdo-navy dark:text-blue-300 mt-1">{analyticsSummary.totalSessions}</p>
+              </div>
+              <div className="ui-card p-6">
+                <p className="text-sm font-medium" style={{ color: 'var(--ui-text-muted)' }}>Total Responses</p>
+                <p className="text-3xl font-bold text-bdo-navy dark:text-blue-300 mt-1">{analyticsSummary.totalResponses}</p>
+              </div>
+              <div className="ui-card p-6">
+                <p className="text-sm font-medium" style={{ color: 'var(--ui-text-muted)' }}>Overall Avg. Score</p>
+                <p className="text-3xl font-bold text-bdo-red mt-1">{analyticsSummary.averageScore}%</p>
+              </div>
+              <div className="ui-card p-6">
+                <p className="text-sm font-medium" style={{ color: 'var(--ui-text-muted)' }}>Departments Active</p>
+                <p className="text-3xl font-bold text-bdo-navy dark:text-blue-300 mt-1">
+                  {Object.keys(analyticsSummary.responsesByDepartment).length}
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="ui-card p-6">
+                <h3 className="text-lg font-semibold text-bdo-navy dark:text-gray-100 mb-4">Score Distribution</h3>
+                <div className="space-y-3">
+                  {Object.entries(analyticsSummary.scoreDistribution).map(([range, count]) => {
+                    const total = analyticsSummary.totalResponses || 1
+                    const pct = Math.round(((count as number) / total) * 100)
+                    const barColor = range === '81-100' ? 'bg-green-500' : range === '61-80' ? 'bg-blue-500' : range === '41-60' ? 'bg-yellow-500' : range === '21-40' ? 'bg-orange-500' : 'bg-red-500'
+                    return (
+                      <div key={range}>
+                        <div className="flex justify-between text-sm mb-1">
+                          <span style={{ color: 'var(--ui-text)' }}>{range}%</span>
+                          <span style={{ color: 'var(--ui-text-muted)' }}>{count as number} ({pct}%)</span>
+                        </div>
+                        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
+                          <div className={`h-2.5 rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
-              ))}
+              </div>
+              <div className="ui-card p-6">
+                <h3 className="text-lg font-semibold text-bdo-navy dark:text-gray-100 mb-4">Responses by Department</h3>
+                <div className="space-y-3">
+                  {Object.entries(analyticsSummary.responsesByDepartment).map(([dept, count]) => {
+                    const total = analyticsSummary.totalResponses || 1
+                    const pct = Math.round(((count as number) / total) * 100)
+                    return (
+                      <div key={dept}>
+                        <div className="flex justify-between text-sm mb-1">
+                          <span style={{ color: 'var(--ui-text)' }}>{dept}</span>
+                          <span style={{ color: 'var(--ui-text-muted)' }}>{count as number} responses</span>
+                        </div>
+                        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
+                          <div className="h-2.5 rounded-full bg-bdo-red" style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
             </div>
           </div>
         )}
       </div>
     )
   }
+
+  const isRegularUserView = portalMode === 'user' || !(user?.isAdmin || user?.isHR)
 
   // In review mode, filter to show only current user's responses
   const displayResponses = isReviewMode && user?.email
@@ -639,28 +758,38 @@ function ResultsPage() {
           }]
         }
 
-      default: // overview
+      default: // overview — line chart
         return {
           labels: filteredResponses.map((_, index) => `Rank ${index + 1}`),
           datasets: [{
             label: 'Individual Scores',
             data: filteredResponses.map(r => r.score),
-            backgroundColor: 'rgba(220, 38, 38, 0.6)',
             borderColor: 'rgba(220, 38, 38, 1)',
-            borderWidth: 1,
+            backgroundColor: 'rgba(220, 38, 38, 0.1)',
+            borderWidth: 2,
+            tension: 0.3,
+            fill: false,
+            pointRadius: 4,
+            pointBackgroundColor: 'rgba(220, 38, 38, 1)',
           }]
         }
     }
   }
+
+  const isDark = document.documentElement.classList.contains('dark')
+  const chartTextColor = isDark ? '#f1f5f9' : '#1e293b'
+  const chartGridColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'
 
   const chartOptions = {
     responsive: true,
     plugins: {
       legend: {
         position: 'top' as const,
+        labels: { color: chartTextColor },
       },
       title: {
         display: true,
+        color: chartTextColor,
         text: viewMode === 'department' ? 'Performance by Department' :
           viewMode === 'grade' ? 'Grade Distribution' : 'Individual Performance'
       },
@@ -669,10 +798,13 @@ function ResultsPage() {
       y: {
         beginAtZero: true,
         max: 100,
-        title: {
-          display: true,
-          text: 'Score (%)'
-        }
+        ticks: { color: chartTextColor },
+        grid: { color: chartGridColor },
+        title: { display: true, text: 'Score (%)', color: chartTextColor }
+      },
+      x: {
+        ticks: { color: chartTextColor },
+        grid: { color: chartGridColor },
       }
     } : undefined
   }
@@ -766,7 +898,7 @@ function ResultsPage() {
       {/* Review Mode - Show User's Answers */}
       {isReviewMode && session.questions && session.questions.map((question: any, qIndex: number) => {
         const userAnswer = displayResponses?.[0]?.answers?.[question.id]
-        const isCorrect = userAnswer === question.correctAnswer
+        const isCorrect = Number(userAnswer) === question.correctAnswer
 
         return (
           <div key={question.id} className="ui-card-strong mb-4 p-4">
@@ -775,22 +907,22 @@ function ResultsPage() {
                 {isCorrect ? '✓' : '✗'}
               </div>
               <div className="flex-1">
-                <h3 className="font-semibold text-bdo-navy mb-2">
+                <h3 className="font-semibold text-bdo-navy dark:text-gray-100 mb-2">
                   Question {qIndex + 1}: {question.text}
                 </h3>
 
                 <div className="space-y-2 mb-3">
                   {question.options.map((option: string, optIndex: number) => {
-                    const isSelected = userAnswer === String(optIndex)
+                    const isSelected = Number(userAnswer) === optIndex
                     const isCorrectOption = question.correctAnswer === optIndex
 
                     let optionClass = "p-3 rounded-lg border "
                     if (isCorrectOption) {
-                      optionClass += "bg-green-50 border-green-500 text-green-700 "
+                      optionClass += "bg-green-100 dark:bg-green-900/40 border-green-500 text-green-900 dark:text-green-200"
                     } else if (isSelected && !isCorrectOption) {
-                      optionClass += "bg-red-50 border-red-500 text-red-700 "
+                      optionClass += "bg-red-100 dark:bg-red-900/40 border-red-500 text-red-900 dark:text-red-200"
                     } else {
-                      optionClass += "bg-gray-50 border-gray-200 "
+                      optionClass += "bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-600 text-gray-900 dark:text-gray-100"
                     }
 
                     return (
@@ -817,8 +949,53 @@ function ResultsPage() {
         )
       })}
 
-      {/* Summary Stats - Responsive Grid */}
-      <div className="ui-grid-stats mb-8">
+      {/* Regular User Personal Score Card */}
+      {isRegularUserView && displayResponses?.[0] && (() => {
+        const ur = displayResponses[0]
+        const correctCount = session.questions?.filter((q: any) => Number(ur.answers?.[q.id]) === q.correctAnswer).length || 0
+        const grade = getGradeFromScore(ur.score)
+        const gradeColor = grade === 'Distinction' ? 'text-green-700 dark:text-green-300' :
+          grade === 'Merit' ? 'text-blue-700 dark:text-blue-300' :
+          grade === 'Pass' ? 'text-yellow-700 dark:text-yellow-300' :
+          grade === 'Warning' ? 'text-orange-700 dark:text-orange-300' :
+          'text-red-700 dark:text-red-300'
+        const gradeBg = grade === 'Distinction' ? 'bg-green-50 dark:bg-green-900/20' :
+          grade === 'Merit' ? 'bg-blue-50 dark:bg-blue-900/20' :
+          grade === 'Pass' ? 'bg-yellow-50 dark:bg-yellow-900/20' :
+          grade === 'Warning' ? 'bg-orange-50 dark:bg-orange-900/20' :
+          'bg-red-50 dark:bg-red-900/20'
+        return (
+          <div className="ui-card mb-8 p-6">
+            <h2 className="text-xl font-bold text-bdo-navy dark:text-gray-100 mb-4">Your Results</h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+              <div className="text-center p-4 rounded-lg bg-gray-50 dark:bg-gray-800">
+                <p className="text-3xl font-bold text-bdo-navy dark:text-gray-100">{ur.score}%</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">Your Score</p>
+              </div>
+              <div className={`text-center p-4 rounded-lg ${gradeBg}`}>
+                <p className={`text-2xl font-bold ${gradeColor}`}>{grade}</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">Grade</p>
+              </div>
+              <div className="text-center p-4 rounded-lg bg-gray-50 dark:bg-gray-800">
+                <p className="text-3xl font-bold text-bdo-navy dark:text-gray-100">
+                  {Math.floor(ur.timeSpent / 60)}m {ur.timeSpent % 60}s
+                </p>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">Time Taken</p>
+              </div>
+              <div className="text-center p-4 rounded-lg bg-gray-50 dark:bg-gray-800">
+                <p className="text-3xl font-bold text-bdo-navy dark:text-gray-100">{correctCount}/{totalQuestions}</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">Correct</p>
+              </div>
+            </div>
+            <Button onClick={() => navigate('/app/dashboard')} variant="outline">
+              Back to Dashboard
+            </Button>
+          </div>
+        )
+      })()}
+
+      {/* Summary Stats - Responsive Grid (Admin/HR only) */}
+      {!isRegularUserView && (<div className="ui-grid-stats mb-8">
         {/* Participants Card */}
         <div className="ui-card p-6">
           <div className="flex items-center justify-between">
@@ -872,7 +1049,9 @@ function ResultsPage() {
             </div>
           </div>
         </div>
-      </div>
+      </div>)}
+
+      {!isRegularUserView && (<>
 
       {/* View Mode and Filters */}
       <div className="ui-card-strong mb-6">
@@ -1005,8 +1184,10 @@ function ResultsPage() {
             )
           ) : viewMode === 'grade' ? (
             <Pie data={getChartData()} options={chartOptions} />
-          ) : (
+          ) : viewMode === 'department' ? (
             <Bar data={getChartData()} options={chartOptions} />
+          ) : (
+            <Line data={getChartData()} options={chartOptions} />
           )}
         </div>
       </div>
@@ -1025,17 +1206,17 @@ function ResultsPage() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Grade Distribution</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-700" style={{ background: 'var(--ui-surface)' }}>
                 {departmentStats.map((stat) => (
-                  <tr key={stat.department} className="hover:bg-gray-50">
+                  <tr key={stat.department} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">{stat.department}</div>
+                      <div className="text-sm font-medium" style={{ color: 'var(--ui-text)' }}>{stat.department}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{stat.participants}</div>
+                      <div className="text-sm" style={{ color: 'var(--ui-text)' }}>{stat.participants}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">{stat.averageScore}%</div>
+                      <div className="text-sm font-medium" style={{ color: 'var(--ui-text)' }}>{stat.averageScore}%</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-600">
@@ -1109,6 +1290,111 @@ function ResultsPage() {
           </div>
         )}
       </div>
+
+      </>)}
+
+      {/* Admin Analytics Summary */}
+      {user?.isAdmin && analyticsSummary && (
+        <div className="space-y-6 mt-8">
+          <h2 className="text-2xl font-bold text-bdo-navy dark:text-gray-100">Overall Analytics</h2>
+
+          {/* KPI tiles */}
+          <div className="ui-grid-stats">
+            <div className="ui-card p-6">
+              <p className="text-sm font-medium" style={{ color: 'var(--ui-text-muted)' }}>Total Sessions</p>
+              <p className="text-3xl font-bold text-bdo-navy dark:text-blue-300 mt-1">{analyticsSummary.totalSessions}</p>
+            </div>
+            <div className="ui-card p-6">
+              <p className="text-sm font-medium" style={{ color: 'var(--ui-text-muted)' }}>Total Responses</p>
+              <p className="text-3xl font-bold text-bdo-navy dark:text-blue-300 mt-1">{analyticsSummary.totalResponses}</p>
+            </div>
+            <div className="ui-card p-6">
+              <p className="text-sm font-medium" style={{ color: 'var(--ui-text-muted)' }}>Overall Avg. Score</p>
+              <p className="text-3xl font-bold text-bdo-red mt-1">{analyticsSummary.averageScore}%</p>
+            </div>
+            <div className="ui-card p-6">
+              <p className="text-sm font-medium" style={{ color: 'var(--ui-text-muted)' }}>Departments Active</p>
+              <p className="text-3xl font-bold text-bdo-navy dark:text-blue-300 mt-1">
+                {Object.keys(analyticsSummary.responsesByDepartment).length}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Score Distribution */}
+            <div className="ui-card p-6">
+              <h3 className="text-lg font-semibold text-bdo-navy dark:text-gray-100 mb-4">Score Distribution</h3>
+              <div className="space-y-3">
+                {Object.entries(analyticsSummary.scoreDistribution).map(([range, count]) => {
+                  const total = analyticsSummary.totalResponses || 1
+                  const pct = Math.round((count / total) * 100)
+                  const barColor =
+                    range === '81-100' ? 'bg-green-500' :
+                    range === '61-80' ? 'bg-blue-500' :
+                    range === '41-60' ? 'bg-yellow-500' :
+                    range === '21-40' ? 'bg-orange-500' : 'bg-red-500'
+                  return (
+                    <div key={range}>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span style={{ color: 'var(--ui-text)' }}>{range}%</span>
+                        <span style={{ color: 'var(--ui-text-muted)' }}>{count} ({pct}%)</span>
+                      </div>
+                      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
+                        <div className={`h-2.5 rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Responses by Department */}
+            <div className="ui-card p-6">
+              <h3 className="text-lg font-semibold text-bdo-navy dark:text-gray-100 mb-4">Responses by Department</h3>
+              <div className="space-y-3">
+                {Object.entries(analyticsSummary.responsesByDepartment).map(([dept, count]) => {
+                  const total = analyticsSummary.totalResponses || 1
+                  const pct = Math.round((count / total) * 100)
+                  return (
+                    <div key={dept}>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span style={{ color: 'var(--ui-text)' }}>{dept}</span>
+                        <span style={{ color: 'var(--ui-text-muted)' }}>{count} responses</span>
+                      </div>
+                      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
+                        <div className="h-2.5 rounded-full bg-bdo-red" style={{ width: `${pct}%` }} />
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Recent Submissions */}
+          <div className="ui-card p-0 overflow-hidden">
+            <div className="px-6 py-4 border-b" style={{ borderColor: 'var(--ui-border)' }}>
+              <h3 className="text-lg font-semibold text-bdo-navy dark:text-gray-100">Recent Submissions</h3>
+            </div>
+            <div className="divide-y" style={{ borderColor: 'var(--ui-border)' }}>
+              {analyticsSummary.recentActivity.slice(0, 10).map((item) => (
+                <div key={item.id} className="flex items-center justify-between px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                  <div>
+                    <p className="text-sm font-medium" style={{ color: 'var(--ui-text)' }}>{item.user?.email}</p>
+                    <p className="text-xs" style={{ color: 'var(--ui-text-muted)' }}>{item.user?.department}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-bold text-bdo-navy dark:text-gray-100">{item.score}%</p>
+                    <p className="text-xs" style={{ color: 'var(--ui-text-muted)' }}>
+                      {new Date(item.completedAt).toLocaleDateString()}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Feedback Modal */}
       <FeedbackModal

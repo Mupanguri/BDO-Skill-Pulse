@@ -27,15 +27,22 @@
 }
 
 .dark {
-  --ui-bg: #0f172a;
-  --ui-surface: #1e293b;
-  --ui-surface-muted: #334155;
+  --ui-bg: #070f1e;
+  --ui-surface: #0d1e38;
+  --ui-surface-muted: #142444;
   --ui-text: #f1f5f9;
   --ui-text-muted: #94a3b8;
-  --ui-border: #334155;
+  --ui-border: #1e3a5f;
   --ui-ring: #3b82f6;
-  --ui-shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.3);
-  --ui-shadow-card: 0 10px 30px rgba(0, 0, 0, 0.5);
+  --ui-shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --ui-shadow-card: 0 10px 30px rgba(0, 0, 0, 0.6);
+}
+
+.dark body {
+  background:
+    radial-gradient(circle at top right, rgba(0, 102, 204, 0.12), transparent 40%),
+    radial-gradient(circle at bottom left, rgba(204, 0, 0, 0.08), transparent 36%),
+    var(--ui-bg);
 }
 
 body {
@@ -64,7 +71,8 @@ a {
 input,
 select,
 textarea {
-  background-color: #fff;
+  background-color: var(--ui-surface);
+  color: var(--ui-text);
 }
 
 input:focus-visible,

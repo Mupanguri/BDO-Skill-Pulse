@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(npm list *)",
+      "Bash(npx tsc *)",
+      "Bash(grep -E \"\\\\.\\(tsx|ts\\)$\")",
+      "Bash(node -e \"const c = require\\('./node_modules/react-chartjs-2'\\); console.log\\(Object.keys\\(c\\)\\)\")",
+      "Bash(node -e \"import\\('./src/routes/analytics.js'\\).then\\(m => console.log\\('OK:', Object.keys\\(m\\)\\)\\).catch\\(e => console.error\\('ERR:', e.message\\)\\)\")",
+      "Bash(node -e \"import\\('./src/routes/analytics.js'\\).then\\(\\(\\) => console.log\\('OK'\\)\\).catch\\(e => console.error\\('ERR:', e.message\\)\\)\")"
+    ]
+  }
+}

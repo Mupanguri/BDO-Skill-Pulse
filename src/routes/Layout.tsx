@@ -1,6 +1,7 @@
 import { Outlet } from 'react-router-dom'
 import { useState } from 'react'
 import Sidebar from '../lib/components/Sidebar'
+import TutorialManager from '../lib/components/TutorialManager'
 
 function Layout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -10,7 +11,7 @@ function Layout() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="min-h-screen" style={{ background: 'var(--ui-bg)' }}>
       {/* Pass mobile menu state to Sidebar */}
       <Sidebar
         mobileMenuOpen={mobileMenuOpen}
@@ -25,6 +26,7 @@ function Layout() {
           <Outlet />
         </div>
       </main>
+      <TutorialManager />
     </div>
   )
 }

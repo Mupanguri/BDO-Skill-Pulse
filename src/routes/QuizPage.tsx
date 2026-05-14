@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../lib/contexts/AuthContext'
 import QuizTimer from '../lib/components/QuizTimer'
 import Button from '../lib/components/Button'
-import { AlertCircle, Clock, Save } from 'lucide-react'
+import { AlertCircle, Clock, Maximize, Coffee } from 'lucide-react'
+import { seededShuffle, reorderByIds } from '../lib/utils/quiz'
 
 interface Question {
   id: string
@@ -17,7 +18,7 @@ interface QuizSession {
   id: string
   name: string
   questions: Question[]
-  time?: number
+  timeLimitMinutes?: number
 }
 
 function QuizPage() {
@@ -25,74 +26,174 @@ function QuizPage() {
   const [searchParams] = useSearchParams()
   const isRetake = searchParams.get('retake') === 'true'
   const navigate = useNavigate()
-  const { user, accessToken, refreshAccessToken } = useAuth()
+  const { user } = useAuth()
 
   const [session, setSession] = useState<QuizSession | null>(null)
+  const [displayQuestions, setDisplayQuestions] = useState<Question[]>([])
   const [answers, setAnswers] = useState<Record<string, number>>({})
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [showWarning, setShowWarning] = useState(false)
   const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
-  const [sessionExpired, setSessionExpired] = useState(false)
-
-  // Timer state
   const [quizStartTime] = useState(Date.now())
-  const [timeRemaining, setTimeRemaining] = useState(300) // 5 minutes
-  const autoSaveInterval = useRef<NodeJS.Timeout | null>(null)
+  const [timeRemaining, setTimeRemaining] = useState(1800)
+  const [showBreakModal, setShowBreakModal] = useState(false)
+  const [onBreak, setOnBreak] = useState(false)
+  const autoSaveInterval = useRef<ReturnType<typeof setInterval> | null>(null)
+  const questionOrderRef = useRef<string[]>([])
+
+  const saveProgress = useCallback(async (data: {
+    answers?: Record<string, number>
+    timeRemaining?: number
+    questionOrder?: string[]
+  }) => {
+    if (!user || !sessionId) return
+    setAutoSaveStatus('saving')
+    try {
+      await fetch('/api/quiz-progress', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userEmail: user.email,
+          sessionId,
+          answers: data.answers ?? answers,
+          timeRemaining: data.timeRemaining ?? timeRemaining,
+          questionOrder: data.questionOrder ?? questionOrderRef.current
+        })
+      })
+      setAutoSaveStatus('saved')
+      setTimeout(() => setAutoSaveStatus('idle'), 1500)
+    } catch {
+      // silent fail
+    }
+  }, [user, sessionId, answers, timeRemaining])
 
   useEffect(() => {
-    if (!sessionId) {
-      console.error('No sessionId provided')
-      navigate('/app/dashboard')
-      return
+    if (!sessionId) { navigate('/app/dashboard'); return }
+    if (sessionId && user) {
+      loadQuizAndProgress()
     }
-    if (sessionId && user && accessToken) {
-      loadQuiz()
-      loadSavedProgress()
-      startAutoSave()
-    }
-
     return () => {
-      if (autoSaveInterval.current) {
-        clearInterval(autoSaveInterval.current)
+      if (autoSaveInterval.current) clearInterval(autoSaveInterval.current)
+    }
+  }, [sessionId, user])
+
+  // Auto-save every 30s
+  useEffect(() => {
+    if (!session) return
+    autoSaveInterval.current = setInterval(() => saveProgress({ answers, timeRemaining }), 30000)
+    return () => { if (autoSaveInterval.current) clearInterval(autoSaveInterval.current) }
+  }, [session, answers, timeRemaining, saveProgress])
+
+  // Save on tab hide (handles user switching away from the tab)
+  useEffect(() => {
+    const handler = () => {
+      if (document.hidden && session) saveProgress({ answers, timeRemaining })
+    }
+    document.addEventListener('visibilitychange', handler)
+    return () => document.removeEventListener('visibilitychange', handler)
+  }, [session, answers, timeRemaining, saveProgress])
+
+  // Warn before closing/navigating away
+  useEffect(() => {
+    if (!session) return
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = 'Your quiz timer is still running. Time will continue to count down even if you leave.'
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [session])
+
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const quizOverlayRef = useRef<HTMLDivElement>(null)
+
+  // Enter fullscreen when quiz loads; intercept fullscreen exit with break dialog
+  useEffect(() => {
+    if (!session) return
+
+    const enterFullscreen = () => {
+      quizOverlayRef.current?.requestFullscreen?.().catch(() => {})
+    }
+    setTimeout(enterFullscreen, 300)
+
+    const handleFullscreenChange = () => {
+      const inFS = !!document.fullscreenElement
+      setIsFullscreen(inFS)
+      if (!inFS && !onBreak) {
+        setShowBreakModal(true)
       }
     }
-  }, [sessionId, user, accessToken])
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange)
+      if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {})
+    }
+  }, [session])
 
-  const loadQuiz = async () => {
+  const handleResumeFullscreen = () => {
+    setShowBreakModal(false)
+    setOnBreak(false)
+    quizOverlayRef.current?.requestFullscreen?.().catch(() => {})
+  }
+
+  const handleTakeBreak = () => {
+    setOnBreak(true)
+    setShowBreakModal(false)
+    saveProgress({ answers, timeRemaining })
+  }
+
+  const loadQuizAndProgress = async () => {
     try {
-      const response = await fetch(`/api/sessions/${sessionId}`, {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        }
-      })
-      if (response.ok) {
-        const sessionData = await response.json()
-        setSession(sessionData)
-      } else if (response.status === 401) {
-        // Try to refresh token
-        const refreshed = await refreshAccessToken()
-        if (refreshed) {
-          // Retry with new token
-          const newResponse = await fetch(`/api/sessions/${sessionId}`, {
-            headers: {
-              'Authorization': `Bearer ${accessToken}`
-            }
-          })
-          if (newResponse.ok) {
-            const sessionData = await newResponse.json()
-            setSession(sessionData)
+      const [sessionRes, progressRes] = await Promise.all([
+        fetch(`/api/sessions/${sessionId}`, { credentials: 'include' }),
+        fetch(`/api/quiz-progress/${user!.email}/${sessionId}`, { credentials: 'include' })
+      ])
+
+      if (!sessionRes.ok) {
+        if (sessionRes.status === 401) navigate('/login')
+        else { alert('Failed to load quiz'); navigate('/app/dashboard') }
+        return
+      }
+
+      const sessionData: QuizSession = await sessionRes.json()
+      setSession(sessionData)
+
+      const defaultTime = (sessionData.timeLimitMinutes || 30) * 60
+
+      if (progressRes.ok) {
+        const progress = await progressRes.json()
+        const hasProgress = progress && (
+          Object.keys(progress.answers || {}).length > 0 ||
+          (progress.timeRemaining > 0 && progress.timeRemaining < defaultTime) ||
+          progress.questionOrder?.length > 0
+        )
+        if (hasProgress) {
+          // Returning user — restore exact state including paused break time
+          setAnswers(progress.answers || {})
+          setTimeRemaining(progress.timeRemaining > 0 ? progress.timeRemaining : defaultTime)
+          setShowWarning(true)
+
+          // Restore question order
+          if (progress.questionOrder?.length) {
+            const ordered = reorderByIds(sessionData.questions, progress.questionOrder)
+            setDisplayQuestions(ordered)
+            questionOrderRef.current = progress.questionOrder
+          } else {
+            const shuffled = seededShuffle(sessionData.questions, user!.email + sessionId)
+            setDisplayQuestions(shuffled)
+            questionOrderRef.current = shuffled.map(q => q.id)
           }
         } else {
-          setSessionExpired(true)
+          // First time — shuffle and save order
+          firstTimeSetup(sessionData, defaultTime)
         }
       } else {
-        alert('Failed to load quiz')
-        navigate('/app/dashboard')
+        firstTimeSetup(sessionData, defaultTime)
       }
-    } catch (error) {
-      console.error('Failed to load quiz:', error)
+    } catch {
       alert('Failed to load quiz')
       navigate('/app/dashboard')
     } finally {
@@ -100,92 +201,17 @@ function QuizPage() {
     }
   }
 
-  const loadSavedProgress = async () => {
-    if (!user || !sessionId || !accessToken) return
-
-    try {
-      const response = await fetch(`/api/quiz-progress/${user.email}/${sessionId}`, {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        }
-      })
-      if (response.ok) {
-        const progress = await response.json()
-        if (progress && progress.answers) {
-          setAnswers(progress.answers)
-          setTimeRemaining(progress.timeRemaining || 300)
-          setShowWarning(true)
-        }
-      }
-    } catch (error) {
-      console.error('Failed to load saved progress:', error)
-    }
-  }
-
-  const startAutoSave = () => {
-    // Auto-save every 30 seconds
-    autoSaveInterval.current = setInterval(async () => {
-      await handleAutoSave(answers, timeRemaining)
-    }, 30000)
+  const firstTimeSetup = (sessionData: QuizSession, defaultTime: number) => {
+    const shuffled = seededShuffle(sessionData.questions, user!.email + sessionId)
+    setDisplayQuestions(shuffled)
+    setTimeRemaining(defaultTime)
+    questionOrderRef.current = shuffled.map(q => q.id)
+    // Persist the order immediately
+    setTimeout(() => saveProgress({ answers: {}, timeRemaining: defaultTime, questionOrder: shuffled.map(q => q.id) }), 500)
   }
 
   const handleAnswerSelect = (questionId: string, answerIndex: number) => {
-    setAnswers(prev => ({
-      ...prev,
-      [questionId]: answerIndex
-    }))
-  }
-
-  const handleAutoSave = async (currentAnswers: any, remainingTime: number) => {
-    if (!user || !sessionId || !accessToken) return
-
-    setAutoSaveStatus('saving')
-
-    try {
-      const response = await fetch('/api/quiz-progress', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
-        },
-        body: JSON.stringify({
-          userEmail: user.email,
-          sessionId: sessionId,
-          answers: currentAnswers,
-          timeRemaining: remainingTime
-        })
-      })
-
-      if (response.ok) {
-        setAutoSaveStatus('saved')
-        setTimeout(() => setAutoSaveStatus('idle'), 1000)
-      } else if (response.status === 401) {
-        // Try to refresh token and retry
-        const refreshed = await refreshAccessToken()
-        if (refreshed) {
-          // Retry with new token
-          const newResponse = await fetch('/api/quiz-progress', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${accessToken}`
-            },
-            body: JSON.stringify({
-              userEmail: user.email,
-              sessionId: sessionId,
-              answers: currentAnswers,
-              timeRemaining: remainingTime
-            })
-          })
-          if (newResponse.ok) {
-            setAutoSaveStatus('saved')
-            setTimeout(() => setAutoSaveStatus('idle'), 1000)
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Auto-save failed:', error)
-    }
+    setAnswers(prev => ({ ...prev, [questionId]: answerIndex }))
   }
 
   const handleTimeUp = async () => {
@@ -194,20 +220,12 @@ function QuizPage() {
 
   const calculateScore = () => {
     if (!session) return 0
-
-    let correct = 0
-    session.questions.forEach(question => {
-      if (answers[question.id] === question.correctAnswer) {
-        correct++
-      }
-    })
-
-    return Math.round((correct / session.questions.length) * 100)
+    const correct = displayQuestions.filter(q => answers[q.id] === q.correctAnswer).length
+    return Math.round((correct / displayQuestions.length) * 100)
   }
 
   const submitQuiz = async (timeUp = false) => {
-    if (!session || !user || !accessToken) return
-
+    if (!session || !user) return
     setSubmitting(true)
 
     const score = calculateScore()
@@ -216,77 +234,35 @@ function QuizPage() {
     try {
       const response = await fetch('/api/responses', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
-        },
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userEmail: user.email,
-          sessionId: sessionId,
-          answers: answers,
-          score: score,
+          sessionId,
+          answers,
+          score,
           timeSpent: totalTimeSpent,
           completedAt: new Date().toISOString(),
-          timeUp: timeUp
+          timeUp
         })
       })
 
       if (response.ok) {
-        // Mark retake as completed if this was a retake
         if (isRetake) {
           await fetch(`/api/user/${user.email}/session/${sessionId}/complete-retake`, {
             method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${accessToken}`
-            }
+            credentials: 'include'
           })
         }
-
-        // Navigate to results
-        navigate(`/app/admin/results?session=${sessionId}`)
+        navigate(user.isAdmin
+          ? `/app/admin/results?session=${sessionId}`
+          : `/app/results?session=${sessionId}`)
       } else if (response.status === 401) {
-        // Try to refresh token and retry
-        const refreshed = await refreshAccessToken()
-        if (refreshed) {
-          // Retry with new token
-          const newResponse = await fetch('/api/responses', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${accessToken}`
-            },
-            body: JSON.stringify({
-              userEmail: user.email,
-              sessionId: sessionId,
-              answers: answers,
-              score: score,
-              timeSpent: totalTimeSpent,
-              completedAt: new Date().toISOString(),
-              timeUp: timeUp
-            })
-          })
-          if (newResponse.ok) {
-            // Mark retake as completed if this was a retake
-            if (isRetake) {
-              await fetch(`/api/user/${user.email}/session/${sessionId}/complete-retake`, {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${accessToken}`
-                }
-              })
-            }
-
-            // Navigate to results
-            navigate(`/app/admin/results?session=${sessionId}`)
-          }
-        } else {
-          setSessionExpired(true)
-        }
+        navigate('/login')
       } else {
         alert('Failed to submit quiz')
       }
-    } catch (error) {
-      console.error('Failed to submit quiz:', error)
+    } catch {
       alert('Failed to submit quiz')
     } finally {
       setSubmitting(false)
@@ -294,204 +270,244 @@ function QuizPage() {
   }
 
   const goToNext = () => {
-    if (currentQuestionIndex < (session?.questions.length || 0) - 1) {
+    if (currentQuestionIndex < displayQuestions.length - 1)
       setCurrentQuestionIndex(currentQuestionIndex + 1)
-    }
   }
-
   const goToPrevious = () => {
-    if (currentQuestionIndex > 0) {
-      setCurrentQuestionIndex(currentQuestionIndex - 1)
-    }
+    if (currentQuestionIndex > 0) setCurrentQuestionIndex(currentQuestionIndex - 1)
   }
-
-  const canSubmit = () => {
-    return session && Object.keys(answers).length === session.questions.length
-  }
-
-  if (sessionExpired) {
-    return (
-      <div className="text-center py-12">
-        <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Session Expired</h2>
-        <p className="text-gray-600 mb-6">
-          Your session has expired. Please log in again to continue.
-        </p>
-        <Button onClick={() => navigate('/login')}>
-          Go to Login
-        </Button>
-      </div>
-    )
-  }
+  const canSubmit = () => session && Object.keys(answers).length === displayQuestions.length
 
   if (loading) {
     return (
       <div className="text-center py-12">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-500 mx-auto mb-4"></div>
-        <p className="text-gray-600">Loading quiz...</p>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-bdo-red mx-auto mb-4"></div>
+        <p style={{ color: 'var(--ui-text-muted)' }}>Loading quiz...</p>
       </div>
     )
   }
 
-  if (!session) {
+  if (!session || !displayQuestions.length) {
     return (
       <div className="text-center py-12">
         <p className="text-red-600">Quiz not found</p>
-        <Button onClick={() => navigate('/app/dashboard')} className="mt-4">
-          Back to Dashboard
-        </Button>
+        <Button onClick={() => navigate('/app/dashboard')} className="mt-4">Back to Dashboard</Button>
       </div>
     )
   }
 
-  const currentQuestion = session.questions[currentQuestionIndex]
-  const progress = ((currentQuestionIndex + 1) / session.questions.length) * 100
+  const currentQuestion = displayQuestions[currentQuestionIndex]
+  const progress = ((currentQuestionIndex + 1) / displayQuestions.length) * 100
+  const timeLimitMins = session.timeLimitMinutes || 30
 
-  return (
-    <div className="max-w-4xl mx-auto">
-      {/* Warning Banner for Restored Progress */}
+  const quizContent = (
+    <div
+      className="max-w-4xl mx-auto px-4 py-6"
+      style={{ minHeight: isFullscreen ? '100vh' : undefined, background: isFullscreen ? 'var(--ui-bg, #070f1e)' : undefined }}
+    >
+      {/* Break request modal */}
+      {showBreakModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4 text-center">
+            <Coffee className="h-12 w-12 text-orange-500 mx-auto mb-4" />
+            <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">You left the quiz</h2>
+            <p className="text-gray-600 dark:text-gray-400 mb-6 text-sm leading-relaxed">
+              The quiz is locked. Your progress is saved. You can take a break — your timer will resume when you return.
+            </p>
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={handleResumeFullscreen}
+                className="w-full py-3 rounded-xl font-semibold text-white"
+                style={{ background: 'linear-gradient(135deg,#cc2200,#e63300)' }}
+              >
+                <Maximize className="inline h-4 w-4 mr-2" />
+                Return to Quiz
+              </button>
+              <button
+                onClick={handleTakeBreak}
+                className="w-full py-3 rounded-xl font-semibold border border-orange-300 text-orange-700 dark:text-orange-400 dark:border-orange-600 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
+              >
+                Take a Break (timer resumes when you return)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* On-break overlay — covers everything except Resume button */}
+      {onBreak && (
+        <div className="fixed inset-0 z-40 flex flex-col items-center justify-center bg-black/75 backdrop-blur-sm">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-10 max-w-sm w-full mx-4 text-center">
+            <Coffee className="h-14 w-14 text-orange-500 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">On Break</h2>
+            <p className="text-gray-500 dark:text-gray-400 text-sm mb-6 leading-relaxed">
+              Your quiz is paused. Your timer will resume the moment you return.
+            </p>
+            <button
+              onClick={handleResumeFullscreen}
+              className="w-full py-3 rounded-xl font-semibold text-white text-base"
+              style={{ background: 'linear-gradient(135deg,#cc2200,#e63300)' }}
+            >
+              <Maximize className="inline h-4 w-4 mr-2" />
+              Resume Quiz
+            </button>
+          </div>
+        </div>
+      )}
+
       {showWarning && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 mb-6">
           <div className="flex items-center gap-3">
-            <AlertCircle className="h-5 w-5 text-yellow-600" />
+            <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-400 flex-shrink-0" />
             <div className="flex-1">
-              <p className="font-medium text-yellow-800">Progress Restored</p>
-              <p className="text-sm text-yellow-700">
-                Your quiz progress was restored from a previous session. You can continue from where you left off.
+              <p className="font-medium text-yellow-800 dark:text-yellow-300">Progress Restored</p>
+              <p className="text-sm text-yellow-700 dark:text-yellow-400">
+                Your previous answers and time have been restored.
               </p>
             </div>
-            <Button variant="outline" size="sm" onClick={() => setShowWarning(false)}>
-              Dismiss
-            </Button>
+            <Button variant="outline" size="sm" onClick={() => setShowWarning(false)}>Dismiss</Button>
           </div>
         </div>
       )}
 
       {/* Header with Timer */}
-      <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+      <div className="ui-card mb-6">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">{session.name}</h1>
-            <p className="text-gray-600">
-              Question {currentQuestionIndex + 1} of {session.questions.length}
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{session.name}</h1>
+            <p className="text-gray-600 dark:text-gray-400">
+              Question {currentQuestionIndex + 1} of {displayQuestions.length}
             </p>
           </div>
-
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 text-sm text-gray-600">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
               <Clock className="h-4 w-4" />
-              <span>Auto-save: {autoSaveStatus === 'saving' ? 'Saving...' : autoSaveStatus === 'saved' ? 'Saved' : 'Ready'}</span>
-              {autoSaveStatus === 'saving' && <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-red-500"></div>}
-              {autoSaveStatus === 'saved' && <Save className="h-3 w-3 text-green-500" />}
+              <span>{autoSaveStatus === 'saving' ? 'Saving...' : autoSaveStatus === 'saved' ? 'Saved ✓' : 'Auto-save'}</span>
             </div>
-
+            <button
+              onClick={() => { saveProgress({ answers, timeRemaining }); setOnBreak(true); if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {}) }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-orange-300 text-orange-700 dark:text-orange-400 dark:border-orange-600 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
+            >
+              <Coffee className="h-3.5 w-3.5" />
+              Request Break
+            </button>
             <QuizTimer
               duration={timeRemaining}
               onTimeUp={handleTimeUp}
-              onAutoSave={handleAutoSave}
+              onAutoSave={(a, t) => saveProgress({ answers: a, timeRemaining: t })}
               sessionId={sessionId}
               userEmail={user?.email}
+              paused={onBreak}
             />
           </div>
         </div>
-
-        {/* Progress Bar */}
-        <div className="w-full bg-gray-200 rounded-full h-2 mb-4">
-          <div
-            className="bg-red-500 h-2 rounded-full transition-all duration-300"
-            style={{ width: `${progress}%` }}
-          ></div>
+        <div className="w-full rounded-full h-2 bg-gray-200 dark:bg-gray-700">
+          <div className="bg-bdo-red h-2 rounded-full transition-all duration-300" style={{ width: `${progress}%` }} />
         </div>
       </div>
 
-      {/* Question */}
-      <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-6">
+      {/* Question Card — pointer-events disabled during break */}
+      <div className={`ui-card mb-6 transition-opacity duration-200 ${onBreak ? 'opacity-30 pointer-events-none select-none' : ''}`}>
+        <h2 className="text-xl font-semibold mb-6 text-gray-900 dark:text-gray-100">
           {currentQuestion.text}
         </h2>
-
         <div className="space-y-3">
-          {currentQuestion.options.map((option, index) => (
-            <label
-              key={index}
-              className={`flex items-center p-4 border rounded-lg cursor-pointer transition-colors ${
-                answers[currentQuestion.id] === index
-                  ? 'border-red-500 bg-red-50'
-                  : 'border-gray-200 hover:border-gray-300'
-              }`}
-            >
-              <input
-                type="radio"
-                name={`question-${currentQuestion.id}`}
-                value={index}
-                checked={answers[currentQuestion.id] === index}
-                onChange={() => handleAnswerSelect(currentQuestion.id, index)}
-                className="text-red-600 focus:ring-red-500"
-              />
-              <span className="ml-3 text-gray-900">{option}</span>
-            </label>
-          ))}
+          {currentQuestion.options.map((option, index) => {
+            const selected = answers[currentQuestion.id] === index
+            const letter = String.fromCharCode(65 + index)
+            return (
+              <label
+                key={index}
+                className={`flex items-center p-4 border-2 rounded-lg transition-all ${
+                  onBreak ? 'cursor-not-allowed' : 'cursor-pointer'
+                } ${
+                  selected
+                    ? 'border-bdo-red bg-red-50 dark:bg-red-900/20'
+                    : 'border-gray-200 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-400 bg-white dark:bg-gray-800'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name={`question-${currentQuestion.id}`}
+                  value={index}
+                  checked={selected}
+                  onChange={() => !onBreak && handleAnswerSelect(currentQuestion.id, index)}
+                  className="sr-only"
+                  disabled={onBreak}
+                />
+                <span className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold mr-3 flex-shrink-0 ${
+                  selected ? 'bg-bdo-red text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                }`}>
+                  {letter}
+                </span>
+                <span className="text-gray-900 dark:text-gray-100 font-medium">{option}</span>
+              </label>
+            )
+          })}
         </div>
       </div>
 
-      {/* Navigation */}
-      <div className="flex items-center justify-between">
-        <Button
-          onClick={goToPrevious}
-          disabled={currentQuestionIndex === 0}
-          variant="outline"
-        >
+      {/* Navigation — also disabled during break */}
+      <div className={`flex items-center justify-between ${onBreak ? 'opacity-30 pointer-events-none' : ''}`}>
+        <Button onClick={goToPrevious} disabled={currentQuestionIndex === 0 || onBreak} variant="outline">
           Previous
         </Button>
 
-        <div className="flex gap-2">
-          {/* Question Navigation Dots */}
-          {session.questions.map((_, index) => (
+        <div className="flex gap-2 flex-wrap justify-center">
+          {displayQuestions.map((_, index) => (
             <button
               key={index}
-              onClick={() => setCurrentQuestionIndex(index)}
-              className={`w-3 h-3 rounded-full ${
+              onClick={() => !onBreak && setCurrentQuestionIndex(index)}
+              disabled={onBreak}
+              className={`w-3 h-3 rounded-full transition-colors ${
                 index === currentQuestionIndex
-                  ? 'bg-red-500'
-                  : answers[session.questions[index].id] !== undefined
+                  ? 'bg-bdo-red'
+                  : answers[displayQuestions[index].id] !== undefined
                   ? 'bg-green-500'
-                  : 'bg-gray-300'
+                  : 'bg-gray-300 dark:bg-gray-600'
               }`}
               title={`Question ${index + 1}`}
             />
           ))}
         </div>
 
-        {currentQuestionIndex === session.questions.length - 1 ? (
+        {currentQuestionIndex === displayQuestions.length - 1 ? (
           <Button
             onClick={() => submitQuiz()}
-            disabled={!canSubmit() || submitting}
-            className="bg-green-600 hover:bg-green-700"
+            disabled={!canSubmit() || submitting || onBreak}
+            className="bg-green-600 hover:bg-green-700 text-white"
           >
             {submitting ? 'Submitting...' : 'Submit Quiz'}
           </Button>
         ) : (
-          <Button onClick={goToNext}>
-            Next
-          </Button>
+          <Button onClick={goToNext} disabled={onBreak}>Next</Button>
         )}
       </div>
 
       {/* Instructions */}
-      <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h3 className="font-semibold text-blue-900 mb-2">Quiz Instructions</h3>
-        <ul className="text-sm text-blue-800 space-y-1">
-          <li>• You have 5 minutes to complete the quiz</li>
-          <li>• Your progress is automatically saved every 30 seconds</li>
-          <li>• Answer all questions to submit</li>
-          <li>• You can navigate between questions using the dots or buttons</li>
-          <li>• If you leave the page, your progress will be saved</li>
+      <div className="mt-6 rounded-lg p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+        <h3 className="font-semibold text-blue-900 dark:text-blue-300 mb-2">Quiz Instructions</h3>
+        <ul className="text-sm text-blue-800 dark:text-blue-400 space-y-1">
+          <li>• You have {timeLimitMins} minutes to complete this quiz</li>
+          <li>• Your progress and remaining time are saved automatically every 30 seconds</li>
+          <li>• Use "Request Break" to pause — your timer resumes when you return</li>
+          <li>• Answer all questions before submitting</li>
           {isRetake && <li>• This is a retake attempt</li>}
         </ul>
       </div>
     </div>
   )
+
+  return (
+    <div
+      ref={quizOverlayRef}
+      className="outline-none"
+      style={isFullscreen ? { background: 'var(--ui-bg, #0a1628)', minHeight: '100vh', overflowY: 'auto' } : {}}
+      tabIndex={-1}
+    >
+      {quizContent}
+    </div>
+  )
 }
 
 export default QuizPage
-
