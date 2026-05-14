@@ -35,6 +35,8 @@ const PORT = process.env.PORT || 3001
 const ALLOWED_ORIGINS = [
   'http://localhost:3000',
   'http://127.0.0.1:3000',
+  'http://localhost:9000',
+  'http://127.0.0.1:9000',
   ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : [])
 ]
 

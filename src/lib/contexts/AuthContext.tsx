@@ -18,6 +18,7 @@ interface LoginResponse {
   isAdmin: boolean;
   isHR: boolean;
   isSuperAdmin: boolean;
+  darkMode?: boolean;
   accessToken: string;
   refreshToken?: string;
 }
@@ -55,8 +56,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState<string | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(() => {
-    const saved = localStorage.getItem('darkMode');
-    return saved ? JSON.parse(saved) : false;
+    try {
+      const savedUser = localStorage.getItem('user');
+      const email = savedUser ? JSON.parse(savedUser).email : null;
+      const key = email ? `darkMode_${email}` : 'darkMode';
+      const saved = localStorage.getItem(key);
+      return saved ? JSON.parse(saved) : false;
+    } catch { return false; }
   });
   const [isRememberMe, setIsRememberMe] = useState(() => {
     const saved = localStorage.getItem('rememberMe');
@@ -135,10 +141,22 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setPortalMode(null);
     if (data.accessToken) setAccessToken(data.accessToken);
     if (data.refreshToken) setRefreshToken(data.refreshToken);
+    if (data.darkMode !== undefined) setIsDarkMode(Boolean(data.darkMode));
   };
 
   const toggleDarkMode = () => {
-    setIsDarkMode((prev: boolean) => !prev);
+    setIsDarkMode((prev: boolean) => {
+      const next = !prev;
+      if (user) {
+        fetch(`/api/user/${user.email}/profile`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ darkMode: next }),
+        }).catch(() => {});
+      }
+      return next;
+    });
   };
 
   const toggleRememberMe = () => {
@@ -173,6 +191,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setPortalMode(null);
         if (data.accessToken) setAccessToken(data.accessToken);
         if (data.refreshToken) setRefreshToken(data.refreshToken);
+        if (data.darkMode !== undefined) setIsDarkMode(Boolean(data.darkMode));
         setIsRememberMe(rememberMe);
 
         frontendLogger.userAction('login_success', 'AuthContext', {
@@ -281,7 +300,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [user, checkSessionStatus, logout, isRememberMe]);
 
   useEffect(() => {
-    localStorage.setItem('darkMode', JSON.stringify(isDarkMode));
+    const key = user ? `darkMode_${user.email}` : 'darkMode';
+    localStorage.setItem(key, JSON.stringify(isDarkMode));
     if (isDarkMode) {
       document.documentElement.classList.add('dark');
     } else {

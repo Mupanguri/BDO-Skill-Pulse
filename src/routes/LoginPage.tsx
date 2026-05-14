@@ -96,7 +96,11 @@ function LoginPage() {
       const data = await res.json()
       if (res.ok) {
         loginWithData(data)
-        navigate(from, { replace: true })
+        if (!data.hasPassword) {
+          navigate('/app/profile', { replace: true, state: { firstLogin: true } })
+        } else {
+          navigate(from, { replace: true })
+        }
       } else {
         setError(data.error || 'Invalid code. Please try again.')
       }

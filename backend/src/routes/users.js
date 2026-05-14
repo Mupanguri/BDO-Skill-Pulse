@@ -78,7 +78,7 @@ router.patch('/api/user/:email/profile', authenticateToken, async (req, res) => 
 
 router.patch('/api/user/:email/password', authenticateToken, async (req, res) => {
   const { email } = req.params
-  const { currentPassword, newPassword } = req.body
+  const { currentPassword, newPassword, otpCode } = req.body
   if (req.user.email !== email && !req.user.isAdmin) return res.status(403).json({ error: 'Access denied' })
   if (!newPassword) return res.status(400).json({ error: 'New password is required' })
   if (!PASSWORD_REGEX.test(newPassword)) {
@@ -89,8 +89,18 @@ router.patch('/api/user/:email/password', authenticateToken, async (req, res) =>
     const creds = getUserCredentials()
     if (req.user.email === email) {
       if (!creds[email]) return res.status(404).json({ error: 'User not found' })
-      const valid = await bcrypt.compare(currentPassword, creds[email].password)
-      if (!valid) return res.status(400).json({ error: 'Current password is incorrect' })
+      if (creds[email].password !== null) {
+        if (otpCode) {
+          const otpRow = await prisma.otpCode.findFirst({
+            where: { email, code: otpCode, used: false, expiresAt: { gt: new Date() } }
+          })
+          if (!otpRow) return res.status(401).json({ error: 'Invalid or expired code. Request a new one.' })
+          await prisma.otpCode.update({ where: { id: otpRow.id }, data: { used: true } })
+        } else {
+          const valid = await bcrypt.compare(currentPassword, creds[email].password)
+          if (!valid) return res.status(400).json({ error: 'Current password is incorrect' })
+        }
+      }
     }
 
     const hashed = await bcrypt.hash(newPassword, 10)

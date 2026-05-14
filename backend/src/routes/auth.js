@@ -40,7 +40,7 @@ const generateTokens = (user) => {
 
 const cookieOpts = (req) => ({
   httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
+  secure: req.secure || req.headers['x-forwarded-proto'] === 'https',
   sameSite: 'strict'
 })
 
@@ -135,7 +135,7 @@ router.post('/api/login', async (req, res) => {
     res.cookie('accessToken', accessToken, { ...opts, maxAge: ACCESS_TOKEN_TTL_MS })
     res.cookie('refreshToken', refreshToken, { ...opts, maxAge: REFRESH_TOKEN_TTL_MS })
 
-    res.json({ email, department: user.department, isAdmin: user.isAdmin, isHR: Boolean(user.isHR), isSuperAdmin: Boolean(user.isSuperAdmin), accessToken, refreshToken, expiresIn: ACCESS_TOKEN_TTL_MS / 1000 })
+    res.json({ email, department: user.department, isAdmin: user.isAdmin, isHR: Boolean(user.isHR), isSuperAdmin: Boolean(user.isSuperAdmin), darkMode: Boolean(user.darkMode), accessToken, refreshToken, expiresIn: ACCESS_TOKEN_TTL_MS / 1000 })
   } catch (err) {
     console.error('Login error:', err)
     res.status(500).json({ error: 'Login failed' })
@@ -350,6 +350,8 @@ router.post('/api/auth/otp/verify', async (req, res) => {
       isAdmin: Boolean(u.isAdmin),
       isHR: Boolean(u.isHR),
       isSuperAdmin: Boolean(u.isSuperAdmin),
+      hasPassword: Boolean(u.password),
+      darkMode: Boolean(u.darkMode),
       accessToken,
       refreshToken,
       expiresIn: ACCESS_TOKEN_TTL_MS / 1000,

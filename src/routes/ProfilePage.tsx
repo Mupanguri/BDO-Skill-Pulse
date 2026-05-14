@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { User, Shield, Sun, Moon, Mail, Building, Key, Save, Upload, X, AlertCircle, CheckCircle } from 'lucide-react'
 import Button from '../lib/components/Button'
 import Breadcrumb from '../lib/components/Breadcrumb'
@@ -26,6 +27,8 @@ function ProfilePage() {
     newPassword: '',
     confirmPassword: ''
   })
+  const [pwStep, setPwStep] = useState<'idle' | 'otp-sent'>('idle')
+  const [pwOtp, setPwOtp] = useState('')
   const [profileForm, setProfileForm] = useState({
     displayName: '',
     darkMode: false
@@ -34,6 +37,9 @@ function ProfilePage() {
   const [imagePreview, setImagePreview] = useState<string>('')
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
   const { user, isDarkMode, toggleDarkMode } = useAuth()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const firstLogin = (location.state as { firstLogin?: boolean })?.firstLogin === true
 
   useEffect(() => {
     if (user) {
@@ -110,6 +116,29 @@ function ProfilePage() {
     }
   }
 
+  const sendPwOtp = async () => {
+    setSaving(true)
+    setMessage(null)
+    try {
+      const res = await fetch('/api/auth/otp/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email: user?.email, forgot: true }),
+      })
+      if (res.ok) {
+        setPwStep('otp-sent')
+        setMessage({ type: 'success', text: `A verification code was sent to ${user?.email}` })
+      } else {
+        setMessage({ type: 'error', text: 'Failed to send code. Try again.' })
+      }
+    } catch {
+      setMessage({ type: 'error', text: 'Network error. Try again.' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault()
     setSaving(true)
@@ -129,23 +158,28 @@ function ProfilePage() {
     }
 
     try {
+      const body: Record<string, string> = { newPassword: passwordForm.newPassword }
+      if (firstLogin) {
+        // no verification needed — null password bypass handled by backend
+      } else if (pwStep === 'otp-sent') {
+        body.otpCode = pwOtp
+      } else {
+        body.currentPassword = passwordForm.currentPassword
+      }
+
       const response = await fetch(`/api/user/${user?.email}/password`, {
         method: 'PATCH',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          currentPassword: passwordForm.currentPassword,
-          newPassword: passwordForm.newPassword
-        })
+        body: JSON.stringify(body)
       })
 
       if (response.ok) {
-        setMessage({ type: 'success', text: 'Password changed successfully' })
-        setPasswordForm({
-          currentPassword: '',
-          newPassword: '',
-          confirmPassword: ''
-        })
+        setMessage({ type: 'success', text: firstLogin ? 'Password set successfully! Redirecting…' : 'Password changed successfully' })
+        setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' })
+        setPwStep('idle')
+        setPwOtp('')
+        if (firstLogin) setTimeout(() => navigate('/app/dashboard', { replace: true }), 1200)
       } else {
         const error = await response.json()
         setMessage({ type: 'error', text: error.error || 'Failed to change password' })
@@ -261,10 +295,20 @@ function ProfilePage() {
         { label: 'Profile' }
       ]} />
 
+      {/* First-login welcome banner */}
+      {firstLogin && (
+        <div className="mb-6 p-5 rounded-xl border border-blue-200 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-800">
+          <h2 className="text-lg font-bold text-blue-900 dark:text-blue-200 mb-1">Welcome to BDO Skills Pulse!</h2>
+          <p className="text-sm text-blue-700 dark:text-blue-300">
+            Your profile is pre-filled from the staff directory. You can set a password below to use it for future logins — or skip and keep using email codes.
+          </p>
+        </div>
+      )}
+
       {/* Header */}
       <div className="ui-page-header mb-6">
         <div>
-          <h1 className="ui-page-title">User Profile</h1>
+          <h1 className="ui-page-title">{firstLogin ? 'Complete Your Profile' : 'User Profile'}</h1>
           <p className="ui-page-subtitle">Manage your account settings and preferences</p>
         </div>
       </div>
@@ -486,56 +530,93 @@ function ProfilePage() {
 
           {/* Password Change Section */}
           <div className="ui-card-strong">
-            <h3 className="text-lg font-semibold text-bdo-navy mb-4">Change Password</h3>
-            <form onSubmit={handlePasswordChange} className="space-y-4">
-              <div>
-                <label htmlFor="currentPassword" className="ui-label">Current Password</label>
-                <input
-                  type="password"
-                  id="currentPassword"
-                  value={passwordForm.currentPassword}
-                  onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
-                  className="ui-field"
-                  placeholder="Enter your current password"
-                  required
-                />
+            <h3 className="text-lg font-semibold text-bdo-navy mb-1">
+              {firstLogin ? 'Set a Password' : 'Change Password'}
+            </h3>
+            {firstLogin && (
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+                Optional — set a password to sign in without email codes in the future.
+              </p>
+            )}
+            {!firstLogin && pwStep === 'idle' && (
+              <div className="mb-4">
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                  We'll send a verification code to your email to confirm your identity before changing your password.
+                </p>
+                <Button onClick={sendPwOtp} disabled={saving} size="sm" variant="secondary" type="button">
+                  <Mail className="h-4 w-4 mr-2" aria-hidden="true" />
+                  {saving ? 'Sending…' : 'Send verification code'}
+                </Button>
               </div>
+            )}
+            {(firstLogin || pwStep === 'otp-sent') && (
+            <form onSubmit={handlePasswordChange} className="space-y-4">
+              {pwStep === 'otp-sent' && (
+                <div>
+                  <label htmlFor="pwOtp" className="ui-label">Verification code</label>
+                  <input
+                    type="text"
+                    id="pwOtp"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={pwOtp}
+                    onChange={(e) => setPwOtp(e.target.value.replace(/\D/g, ''))}
+                    className="ui-field font-mono tracking-widest"
+                    placeholder="000000"
+                    required
+                    autoFocus
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    <button type="button" onClick={sendPwOtp} disabled={saving} className="text-bdo-blue hover:underline">Resend code</button>
+                  </p>
+                </div>
+              )}
 
               <div>
-                <label htmlFor="newPassword" className="ui-label">New Password</label>
+                <label htmlFor="newPassword" className="ui-label">{firstLogin ? 'Password' : 'New Password'}</label>
                 <input
                   type="password"
                   id="newPassword"
                   value={passwordForm.newPassword}
                   onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
                   className="ui-field"
-                  placeholder="Enter your new password"
+                  placeholder={firstLogin ? 'Create a password' : 'Enter your new password'}
                   minLength={6}
                   required
                 />
               </div>
 
               <div>
-                <label htmlFor="confirmPassword" className="ui-label">Confirm New Password</label>
+                <label htmlFor="confirmPassword" className="ui-label">Confirm Password</label>
                 <input
                   type="password"
                   id="confirmPassword"
                   value={passwordForm.confirmPassword}
                   onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
                   className="ui-field"
-                  placeholder="Confirm your new password"
+                  placeholder="Confirm your password"
                   minLength={6}
                   required
                 />
               </div>
 
-              <div className="flex justify-end">
+              <div className={`flex ${firstLogin ? 'justify-between' : 'justify-end'} items-center gap-3`}>
+                {firstLogin && (
+                  <button
+                    type="button"
+                    onClick={() => navigate('/app/dashboard', { replace: true })}
+                    className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
+                  >
+                    Skip for now
+                  </button>
+                )}
                 <Button type="submit" disabled={saving} size="sm" variant="secondary">
                   <Key className="h-4 w-4 mr-2" aria-hidden="true" />
-                  {saving ? 'Changing...' : 'Change Password'}
+                  {saving ? 'Saving...' : firstLogin ? 'Set Password' : 'Change Password'}
                 </Button>
               </div>
             </form>
+            )}
           </div>
 
           {/* Account Information Section */}
