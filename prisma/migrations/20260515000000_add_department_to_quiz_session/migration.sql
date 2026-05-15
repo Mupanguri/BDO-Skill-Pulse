@@ -1,0 +1,1 @@
+ALTER TABLE "QuizSession" ADD COLUMN IF NOT EXISTS "department" TEXT;
