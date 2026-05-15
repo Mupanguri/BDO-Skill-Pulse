@@ -14,7 +14,8 @@
     "screenshot": "playwright test screenshot-tour.spec.ts --reporter=list",
     "seed-users": "node scripts/seed-users.js",
     "seed-malawi": "node scripts/seed-malawi.js",
-    "select-samples": "node scripts/select-test-samples.js"
+    "select-samples": "node scripts/select-test-samples.js",
+    "set-test-groups": "node scripts/set-test-groups.js"
   },
   "dependencies": {
     "@libsql/client": "^0.17.0",

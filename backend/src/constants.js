@@ -9,4 +9,4 @@ export const RETAKE_COOLDOWN_MS = 30 * ONE_MINUTE_MS
 export const RETAKE_WINDOW_MS = 2 * 60 * ONE_MINUTE_MS
 export const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&()#^])[A-Za-z\d@$!%*?&()#^]{8,}$/
 export const EMAIL_DOMAIN = 'bdo.co.zw'
-export const OFFICIAL_DEPARTMENTS = ['Tax', 'Information Technology', 'Audit', 'Accounting Risk Advisory', 'Corporate Finance', 'Business Development', 'Human Resources']
+export const OFFICIAL_DEPARTMENTS = ['Tax', 'Information Technology', 'Audit', 'Accounting Risk Advisory', 'Corporate Finance', 'Business Development', 'Human Resources', 'Test Sample A', 'Test Sample B']
