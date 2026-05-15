@@ -12,7 +12,9 @@
     "dev:full": "concurrently \"npm run backend\" \"npm run dev\"",
     "backend": "cd backend && node src/server.js",
     "screenshot": "playwright test screenshot-tour.spec.ts --reporter=list",
-    "seed-users": "node scripts/seed-users.js"
+    "seed-users": "node scripts/seed-users.js",
+    "seed-malawi": "node scripts/seed-malawi.js",
+    "select-samples": "node scripts/select-test-samples.js"
   },
   "dependencies": {
     "@libsql/client": "^0.17.0",
