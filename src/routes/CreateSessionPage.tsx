@@ -192,6 +192,8 @@ function CreateSessionPage() {
                 <option value="Corporate Finance">Corporate Finance</option>
                 <option value="Business Development">Business Development</option>
                 <option value="Human Resources">Human Resources</option>
+                <option value="Test Sample A">Test Sample A</option>
+                <option value="Test Sample B">Test Sample B</option>
                 <option value="everyone">Everyone (All Departments)</option>
               </select>
             </div>
