@@ -112,21 +112,38 @@ function ProfilePage() {
     }
   }
 
-  const sendPwOtp = async () => {
-    setSaving(true)
+  const requestPwOtp = async () => {
+    const res = await fetch('/api/auth/otp/request', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ email: user?.email, forgot: true }),
+    })
+    return res.ok
+  }
+
+  // Step 1: validate password, send OTP
+  const handlePasswordStep1 = async (e: React.FormEvent) => {
+    e.preventDefault()
     setMessage(null)
+
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setMessage({ type: 'error', text: 'Passwords do not match' })
+      return
+    }
+    if (passwordForm.newPassword.length < 8) {
+      setMessage({ type: 'error', text: 'Password must be at least 8 characters' })
+      return
+    }
+
+    setSaving(true)
     try {
-      const res = await fetch('/api/auth/otp/request', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ email: user?.email, forgot: true }),
-      })
-      if (res.ok) {
+      const ok = await requestPwOtp()
+      if (ok) {
         setPwStep('otp-sent')
         setMessage({ type: 'success', text: `A verification code was sent to ${user?.email}` })
       } else {
-        setMessage({ type: 'error', text: 'Failed to send code. Try again.' })
+        setMessage({ type: 'error', text: 'Failed to send verification code. Try again.' })
       }
     } catch {
       setMessage({ type: 'error', text: 'Network error. Try again.' })
@@ -135,34 +152,18 @@ function ProfilePage() {
     }
   }
 
-  const handlePasswordChange = async (e: React.FormEvent) => {
+  // Step 2: verify OTP, set password
+  const handlePasswordStep2 = async (e: React.FormEvent) => {
     e.preventDefault()
     setSaving(true)
     setMessage(null)
 
-    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      setMessage({ type: 'error', text: 'Passwords do not match' })
-      setSaving(false)
-      return
-    }
-
-    if (passwordForm.newPassword.length < 6) {
-      setMessage({ type: 'error', text: 'Password must be at least 6 characters' })
-      setSaving(false)
-      return
-    }
-
     try {
-      const body: Record<string, string> = {
-        newPassword: passwordForm.newPassword,
-        otpCode: pwOtp
-      }
-
       const response = await fetch(`/api/user/${user?.email}/password`, {
         method: 'PATCH',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
+        body: JSON.stringify({ newPassword: passwordForm.newPassword, otpCode: pwOtp })
       })
 
       if (response.ok) {
@@ -176,9 +177,22 @@ function ProfilePage() {
         const error = await response.json()
         setMessage({ type: 'error', text: error.error || 'Failed to change password' })
       }
-    } catch (error) {
-      console.error('Error changing password:', error)
+    } catch {
       setMessage({ type: 'error', text: 'Failed to change password' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const resendPwOtp = async () => {
+    setSaving(true)
+    setMessage(null)
+    try {
+      const ok = await requestPwOtp()
+      if (ok) setMessage({ type: 'success', text: `A new code was sent to ${user?.email}` })
+      else setMessage({ type: 'error', text: 'Failed to resend code.' })
+    } catch {
+      setMessage({ type: 'error', text: 'Network error.' })
     } finally {
       setSaving(false)
     }
@@ -527,19 +541,54 @@ function ProfilePage() {
             </h3>
             <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
               {hasPassword
-                ? "We'll send a verification code to your email to confirm your identity."
-                : "Create a password to sign in without needing an email code each time."}
+                ? 'Enter your new password and we\'ll send a code to verify it\'s you.'
+                : 'Create a password to sign in without needing an email code each time.'}
             </p>
 
+            {/* Step 1 — enter new password */}
             {pwStep === 'idle' && (
-              <Button onClick={sendPwOtp} disabled={saving} size="sm" variant="secondary" type="button">
-                <Mail className="h-4 w-4 mr-2" aria-hidden="true" />
-                {saving ? 'Sending…' : 'Send verification code'}
-              </Button>
+              <form onSubmit={handlePasswordStep1} className="space-y-4">
+                <div>
+                  <label htmlFor="newPassword" className="ui-label">New Password</label>
+                  <input
+                    type="password"
+                    id="newPassword"
+                    value={passwordForm.newPassword}
+                    onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+                    className="ui-field"
+                    placeholder="Enter your new password"
+                    minLength={8}
+                    required
+                  />
+                </div>
+                <div>
+                  <label htmlFor="confirmPassword" className="ui-label">Confirm Password</label>
+                  <input
+                    type="password"
+                    id="confirmPassword"
+                    value={passwordForm.confirmPassword}
+                    onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+                    className="ui-field"
+                    placeholder="Confirm your password"
+                    minLength={8}
+                    required
+                  />
+                </div>
+                <div className="flex justify-end">
+                  <Button type="submit" disabled={saving} size="sm" variant="secondary">
+                    <Key className="h-4 w-4 mr-2" aria-hidden="true" />
+                    {saving ? 'Sending code…' : hasPassword ? 'Change Password' : 'Set Password'}
+                  </Button>
+                </div>
+              </form>
             )}
 
+            {/* Step 2 — enter OTP to confirm */}
             {pwStep === 'otp-sent' && (
-              <form onSubmit={handlePasswordChange} className="space-y-4">
+              <form onSubmit={handlePasswordStep2} className="space-y-4">
+                <p className="text-xs text-gray-600 dark:text-gray-400">
+                  A verification code was sent to <span className="font-medium">{user?.email}</span>. Enter it below to confirm.
+                </p>
                 <div>
                   <label htmlFor="pwOtp" className="ui-label">Verification code</label>
                   <input
@@ -555,44 +604,22 @@ function ProfilePage() {
                     autoFocus
                   />
                   <p className="mt-1 text-xs text-gray-500">
-                    <button type="button" onClick={sendPwOtp} disabled={saving} className="text-bdo-blue hover:underline">
+                    <button type="button" onClick={resendPwOtp} disabled={saving} className="text-bdo-blue hover:underline">
                       Resend code
                     </button>
                   </p>
                 </div>
-
-                <div>
-                  <label htmlFor="newPassword" className="ui-label">New Password</label>
-                  <input
-                    type="password"
-                    id="newPassword"
-                    value={passwordForm.newPassword}
-                    onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
-                    className="ui-field"
-                    placeholder="Enter your new password"
-                    minLength={6}
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="confirmPassword" className="ui-label">Confirm Password</label>
-                  <input
-                    type="password"
-                    id="confirmPassword"
-                    value={passwordForm.confirmPassword}
-                    onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
-                    className="ui-field"
-                    placeholder="Confirm your password"
-                    minLength={6}
-                    required
-                  />
-                </div>
-
-                <div className="flex justify-end">
-                  <Button type="submit" disabled={saving} size="sm" variant="secondary">
+                <div className="flex items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={() => { setPwStep('idle'); setPwOtp(''); setMessage(null) }}
+                    className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
+                  >
+                    ← Back
+                  </button>
+                  <Button type="submit" disabled={saving || pwOtp.length !== 6} size="sm" variant="secondary">
                     <Key className="h-4 w-4 mr-2" aria-hidden="true" />
-                    {saving ? 'Saving...' : hasPassword ? 'Change Password' : 'Set Password'}
+                    {saving ? 'Saving...' : 'Verify & Confirm'}
                   </Button>
                 </div>
               </form>
