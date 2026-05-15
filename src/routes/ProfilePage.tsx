@@ -131,8 +131,9 @@ function ProfilePage() {
       setMessage({ type: 'error', text: 'Passwords do not match' })
       return
     }
-    if (passwordForm.newPassword.length < 8) {
-      setMessage({ type: 'error', text: 'Password must be at least 8 characters' })
+    const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&()#^])[A-Za-z\d@$!%*?&()#^]{8,}$/
+    if (!PASSWORD_REGEX.test(passwordForm.newPassword)) {
+      setMessage({ type: 'error', text: 'Password must be at least 8 characters and include uppercase, lowercase, a number, and a special character (@$!%*?&()#^).' })
       return
     }
 
@@ -560,6 +561,7 @@ function ProfilePage() {
                     minLength={8}
                     required
                   />
+                  <p className="mt-1 text-xs text-gray-400">Min 8 chars · uppercase · lowercase · number · special char (@$!%*?&)</p>
                 </div>
                 <div>
                   <label htmlFor="confirmPassword" className="ui-label">Confirm Password</label>
