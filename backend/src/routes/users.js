@@ -27,13 +27,14 @@ router.get('/api/user/:email/profile', authenticateToken, async (req, res) => {
 
   try {
     const result = await pool.query(
-      `SELECT id, email, department, "isAdmin", "darkMode", "profileImage", "displayName", "lastPasswordChange", "createdAt"
+      `SELECT id, email, department, "isAdmin", "darkMode", "profileImage", "displayName", "lastPasswordChange", "createdAt",
+              (password IS NOT NULL) AS "hasPassword"
        FROM "User" WHERE email = $1`,
       [email]
     )
     if (!result.rows.length) return res.status(404).json({ error: 'User not found' })
     const row = result.rows[0]
-    res.json({ ...row, isAdmin: Boolean(row.isAdmin), darkMode: Boolean(row.darkMode) })
+    res.json({ ...row, isAdmin: Boolean(row.isAdmin), darkMode: Boolean(row.darkMode), hasPassword: Boolean(row.hasPassword) })
   } catch {
     res.status(500).json({ error: 'Failed to fetch user profile' })
   }
@@ -89,17 +90,17 @@ router.patch('/api/user/:email/password', authenticateToken, async (req, res) =>
     const creds = getUserCredentials()
     if (req.user.email === email) {
       if (!creds[email]) return res.status(404).json({ error: 'User not found' })
-      if (creds[email].password !== null) {
-        if (otpCode) {
-          const otpRow = await prisma.otpCode.findFirst({
-            where: { email, code: otpCode, used: false, expiresAt: { gt: new Date() } }
-          })
-          if (!otpRow) return res.status(401).json({ error: 'Invalid or expired code. Request a new one.' })
-          await prisma.otpCode.update({ where: { id: otpRow.id }, data: { used: true } })
-        } else {
-          const valid = await bcrypt.compare(currentPassword, creds[email].password)
-          if (!valid) return res.status(400).json({ error: 'Current password is incorrect' })
-        }
+      if (otpCode) {
+        const otpRow = await prisma.otpCode.findFirst({
+          where: { email, code: otpCode, used: false, expiresAt: { gt: new Date() } }
+        })
+        if (!otpRow) return res.status(401).json({ error: 'Invalid or expired code. Request a new one.' })
+        await prisma.otpCode.update({ where: { id: otpRow.id }, data: { used: true } })
+      } else if (creds[email].password !== null) {
+        const valid = await bcrypt.compare(currentPassword, creds[email].password)
+        if (!valid) return res.status(400).json({ error: 'Current password is incorrect' })
+      } else {
+        return res.status(400).json({ error: 'A verification code is required to set your password.' })
       }
     }
 

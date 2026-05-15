@@ -4,7 +4,7 @@ import { useAuth } from '../lib/contexts/AuthContext'
 import { API_ENDPOINTS } from '../lib/services/api'
 import { Key, Eye, EyeOff, AlertCircle, ArrowLeft, Mail } from 'lucide-react'
 
-type Step = 'email' | 'password' | 'otp'
+type Step = 'email' | 'method' | 'password' | 'otp'
 
 function LoginPage() {
   const [step, setStep] = useState<Step>('email')
@@ -48,7 +48,8 @@ function LoginPage() {
       }
 
       if (data.hasPassword) {
-        setStep('password')
+        // User has a password — let them choose their sign-in method
+        setStep('method')
       } else {
         // OTP sent (or silently dropped if email not found — security)
         setOtpInfo(`A 6-digit code was sent to ${email}. Check your inbox.`)
@@ -61,7 +62,32 @@ function LoginPage() {
     }
   }
 
-  // Step 2a — password login
+  // Method step — user chose "Send me a code" (has a password but wants OTP)
+  const handleMethodOtp = async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const res = await fetch(API_ENDPOINTS.OTP_REQUEST, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email: email.trim(), forgot: true }),
+      })
+      const data = await res.json()
+      if (res.ok && data.sent) {
+        setOtpInfo(`A 6-digit code was sent to ${email}.`)
+        setStep('otp')
+      } else {
+        setError(data.error || 'Could not send code. Try again.')
+      }
+    } catch {
+      setError('Network error. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Password login
   const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
@@ -80,7 +106,7 @@ function LoginPage() {
     }
   }
 
-  // Step 2b — OTP verify
+  // OTP verify
   const handleOtpSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (otp.length !== 6) { setError('Enter the 6-digit code from your email.'); return }
@@ -97,7 +123,7 @@ function LoginPage() {
       if (res.ok) {
         loginWithData(data)
         if (!data.hasPassword) {
-          navigate('/app/profile', { replace: true, state: { firstLogin: true } })
+          navigate('/app/profile', { replace: true })
         } else {
           navigate(from, { replace: true })
         }
@@ -111,7 +137,7 @@ function LoginPage() {
     }
   }
 
-  // Forgot password — request OTP even for password users
+  // Forgot password — request OTP from password step
   const handleForgotPassword = async () => {
     if (!email.trim()) { setError('Enter your email address first.'); return }
     setLoading(true)
@@ -216,7 +242,7 @@ function LoginPage() {
 
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 p-8 sm:p-10">
 
-              {/* Back button (steps 2a/2b) */}
+              {/* Back button */}
               {step !== 'email' && (
                 <button
                   type="button"
@@ -231,11 +257,13 @@ function LoginPage() {
               <div className="mb-8">
                 <h2 className="text-2xl font-bold text-bdo-navy dark:text-gray-100 mb-1">
                   {step === 'email' && 'Welcome back'}
+                  {step === 'method' && 'How would you like to sign in?'}
                   {step === 'password' && 'Enter your password'}
                   {step === 'otp' && 'Check your email'}
                 </h2>
                 <p className="text-sm text-gray-500 dark:text-gray-400">
                   {step === 'email' && 'Sign in to your BDO Skills Pulse account'}
+                  {step === 'method' && email}
                   {step === 'password' && email}
                   {step === 'otp' && (otpInfo || `We sent a code to ${email}`)}
                 </p>
@@ -281,6 +309,29 @@ function LoginPage() {
                     </p>
                   </div>
                 </form>
+              )}
+
+              {/* ── Step 1.5: Method choice (password users only) ── */}
+              {step === 'method' && (
+                <div className="space-y-3">
+                  <button
+                    type="button"
+                    onClick={() => setStep('password')}
+                    className="w-full h-12 rounded-lg font-semibold text-sm border-2 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:border-bdo-navy dark:hover:border-gray-400 transition-all"
+                  >
+                    Enter Password
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleMethodOtp}
+                    disabled={loading}
+                    className="w-full h-12 rounded-lg font-semibold text-white text-sm transition-all duration-150 active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed"
+                    style={{ background: loading ? '#999' : 'linear-gradient(135deg, #cc2200 0%, #e63300 100%)' }}
+                  >
+                    {loading ? <Spinner /> : 'Send me a code instead'}
+                  </button>
+                  {error && <ErrorBox message={error} />}
+                </div>
               )}
 
               {/* ── Step 2a: Password ── */}

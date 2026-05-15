@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
 import { User, Shield, Sun, Moon, Mail, Building, Key, Save, Upload, X, AlertCircle, CheckCircle } from 'lucide-react'
 import Button from '../lib/components/Button'
 import Breadcrumb from '../lib/components/Breadcrumb'
@@ -12,6 +11,7 @@ interface UserProfile {
   department: string
   isAdmin: boolean
   darkMode: boolean
+  hasPassword: boolean
   profileImage?: string
   displayName?: string
   lastPasswordChange?: string
@@ -23,7 +23,6 @@ function ProfilePage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [passwordForm, setPasswordForm] = useState({
-    currentPassword: '',
     newPassword: '',
     confirmPassword: ''
   })
@@ -37,9 +36,6 @@ function ProfilePage() {
   const [imagePreview, setImagePreview] = useState<string>('')
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
   const { user, isDarkMode, toggleDarkMode } = useAuth()
-  const navigate = useNavigate()
-  const location = useLocation()
-  const firstLogin = (location.state as { firstLogin?: boolean })?.firstLogin === true
 
   useEffect(() => {
     if (user) {
@@ -102,7 +98,7 @@ function ProfilePage() {
 
       if (response.ok) {
         const data = await response.json()
-        setUserProfile(data.profile)
+        setUserProfile(prev => prev ? { ...prev, ...data.profile } : data.profile)
         setMessage({ type: 'success', text: 'Profile updated successfully' })
       } else {
         const error = await response.json()
@@ -144,27 +140,22 @@ function ProfilePage() {
     setSaving(true)
     setMessage(null)
 
-    // Validate password
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      setMessage({ type: 'error', text: 'New passwords do not match' })
+      setMessage({ type: 'error', text: 'Passwords do not match' })
       setSaving(false)
       return
     }
 
     if (passwordForm.newPassword.length < 6) {
-      setMessage({ type: 'error', text: 'Password must be at least 6 characters long' })
+      setMessage({ type: 'error', text: 'Password must be at least 6 characters' })
       setSaving(false)
       return
     }
 
     try {
-      const body: Record<string, string> = { newPassword: passwordForm.newPassword }
-      if (firstLogin) {
-        // no verification needed — null password bypass handled by backend
-      } else if (pwStep === 'otp-sent') {
-        body.otpCode = pwOtp
-      } else {
-        body.currentPassword = passwordForm.currentPassword
+      const body: Record<string, string> = {
+        newPassword: passwordForm.newPassword,
+        otpCode: pwOtp
       }
 
       const response = await fetch(`/api/user/${user?.email}/password`, {
@@ -175,11 +166,12 @@ function ProfilePage() {
       })
 
       if (response.ok) {
-        setMessage({ type: 'success', text: firstLogin ? 'Password set successfully! Redirecting…' : 'Password changed successfully' })
-        setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' })
+        const label = userProfile?.hasPassword ? 'Password changed successfully' : 'Password set successfully'
+        setMessage({ type: 'success', text: label })
+        setPasswordForm({ newPassword: '', confirmPassword: '' })
         setPwStep('idle')
         setPwOtp('')
-        if (firstLogin) setTimeout(() => navigate('/app/dashboard', { replace: true }), 1200)
+        setUserProfile(prev => prev ? { ...prev, hasPassword: true } : prev)
       } else {
         const error = await response.json()
         setMessage({ type: 'error', text: error.error || 'Failed to change password' })
@@ -195,13 +187,12 @@ function ProfilePage() {
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
-      // Validate file type and size
       if (!file.type.startsWith('image/')) {
         setMessage({ type: 'error', text: 'Please upload an image file' })
         return
       }
 
-      if (file.size > 5 * 1024 * 1024) { // 5MB limit
+      if (file.size > 5 * 1024 * 1024) {
         setMessage({ type: 'error', text: 'Image file must be less than 5MB' })
         return
       }
@@ -253,7 +244,7 @@ function ProfilePage() {
 
       if (response.ok) {
         const data = await response.json()
-        setUserProfile(data.profile)
+        setUserProfile(prev => prev ? { ...prev, ...data.profile } : data.profile)
         setMessage({ type: 'success', text: 'Profile image updated successfully' })
       } else {
         const error = await response.json()
@@ -287,20 +278,21 @@ function ProfilePage() {
     )
   }
 
+  const hasPassword = userProfile.hasPassword
+
   return (
     <div className="ui-page page-enter">
-      {/* Breadcrumb */}
       <Breadcrumb items={[
         { label: 'Dashboard', href: '/app' },
         { label: 'Profile' }
       ]} />
 
-      {/* First-login welcome banner */}
-      {firstLogin && (
-        <div className="mb-6 p-5 rounded-xl border border-blue-200 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-800">
-          <h2 className="text-lg font-bold text-blue-900 dark:text-blue-200 mb-1">Welcome to BDO Skills Pulse!</h2>
-          <p className="text-sm text-blue-700 dark:text-blue-300">
-            Your profile is pre-filled from the staff directory. You can set a password below to use it for future logins — or skip and keep using email codes.
+      {/* Banner for users who haven't set a password yet */}
+      {!hasPassword && (
+        <div className="mb-6 p-5 rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800">
+          <h2 className="text-base font-bold text-amber-900 dark:text-amber-200 mb-1">Set a password for easier sign-in</h2>
+          <p className="text-sm text-amber-700 dark:text-amber-300">
+            You're currently signing in with email codes. Set a password below to have the option to sign in directly.
           </p>
         </div>
       )}
@@ -308,7 +300,7 @@ function ProfilePage() {
       {/* Header */}
       <div className="ui-page-header mb-6">
         <div>
-          <h1 className="ui-page-title">{firstLogin ? 'Complete Your Profile' : 'User Profile'}</h1>
+          <h1 className="ui-page-title">User Profile</h1>
           <p className="ui-page-subtitle">Manage your account settings and preferences</p>
         </div>
       </div>
@@ -316,8 +308,8 @@ function ProfilePage() {
       {/* Success/Error Messages */}
       {message && (
         <div className={`mb-6 p-4 rounded-lg ${
-          message.type === 'success' 
-            ? 'bg-green-50 border border-green-200' 
+          message.type === 'success'
+            ? 'bg-green-50 border border-green-200'
             : 'bg-red-50 border border-red-200'
         }`}>
           <div className="flex">
@@ -361,8 +353,8 @@ function ProfilePage() {
             <h2 className="text-xl font-bold text-bdo-navy">Profile Information</h2>
             <div className="flex items-center space-x-2">
               <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                userProfile.isAdmin 
-                  ? 'bg-purple-100 text-purple-800' 
+                userProfile.isAdmin
+                  ? 'bg-purple-100 text-purple-800'
                   : 'bg-green-100 text-green-800'
               }`}>
                 {userProfile.isAdmin ? (
@@ -475,9 +467,9 @@ function ProfilePage() {
                 <div className="relative">
                   <div className="h-24 w-24 bg-gray-200 rounded-full flex items-center justify-center overflow-hidden">
                     {imagePreview || userProfile.profileImage ? (
-                      <img 
-                        src={imagePreview || userProfile.profileImage} 
-                        alt="Profile" 
+                      <img
+                        src={imagePreview || userProfile.profileImage}
+                        alt="Profile"
                         className="h-full w-full object-cover"
                       />
                     ) : (
@@ -528,30 +520,26 @@ function ProfilePage() {
             </div>
           </div>
 
-          {/* Password Change Section */}
+          {/* Password Section */}
           <div className="ui-card-strong">
             <h3 className="text-lg font-semibold text-bdo-navy mb-1">
-              {firstLogin ? 'Set a Password' : 'Change Password'}
+              {hasPassword ? 'Change Password' : 'Set a Password'}
             </h3>
-            {firstLogin && (
-              <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-                Optional — set a password to sign in without email codes in the future.
-              </p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+              {hasPassword
+                ? "We'll send a verification code to your email to confirm your identity."
+                : "Create a password to sign in without needing an email code each time."}
+            </p>
+
+            {pwStep === 'idle' && (
+              <Button onClick={sendPwOtp} disabled={saving} size="sm" variant="secondary" type="button">
+                <Mail className="h-4 w-4 mr-2" aria-hidden="true" />
+                {saving ? 'Sending…' : 'Send verification code'}
+              </Button>
             )}
-            {!firstLogin && pwStep === 'idle' && (
-              <div className="mb-4">
-                <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                  We'll send a verification code to your email to confirm your identity before changing your password.
-                </p>
-                <Button onClick={sendPwOtp} disabled={saving} size="sm" variant="secondary" type="button">
-                  <Mail className="h-4 w-4 mr-2" aria-hidden="true" />
-                  {saving ? 'Sending…' : 'Send verification code'}
-                </Button>
-              </div>
-            )}
-            {(firstLogin || pwStep === 'otp-sent') && (
-            <form onSubmit={handlePasswordChange} className="space-y-4">
-              {pwStep === 'otp-sent' && (
+
+            {pwStep === 'otp-sent' && (
+              <form onSubmit={handlePasswordChange} className="space-y-4">
                 <div>
                   <label htmlFor="pwOtp" className="ui-label">Verification code</label>
                   <input
@@ -567,55 +555,47 @@ function ProfilePage() {
                     autoFocus
                   />
                   <p className="mt-1 text-xs text-gray-500">
-                    <button type="button" onClick={sendPwOtp} disabled={saving} className="text-bdo-blue hover:underline">Resend code</button>
+                    <button type="button" onClick={sendPwOtp} disabled={saving} className="text-bdo-blue hover:underline">
+                      Resend code
+                    </button>
                   </p>
                 </div>
-              )}
 
-              <div>
-                <label htmlFor="newPassword" className="ui-label">{firstLogin ? 'Password' : 'New Password'}</label>
-                <input
-                  type="password"
-                  id="newPassword"
-                  value={passwordForm.newPassword}
-                  onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
-                  className="ui-field"
-                  placeholder={firstLogin ? 'Create a password' : 'Enter your new password'}
-                  minLength={6}
-                  required
-                />
-              </div>
+                <div>
+                  <label htmlFor="newPassword" className="ui-label">New Password</label>
+                  <input
+                    type="password"
+                    id="newPassword"
+                    value={passwordForm.newPassword}
+                    onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+                    className="ui-field"
+                    placeholder="Enter your new password"
+                    minLength={6}
+                    required
+                  />
+                </div>
 
-              <div>
-                <label htmlFor="confirmPassword" className="ui-label">Confirm Password</label>
-                <input
-                  type="password"
-                  id="confirmPassword"
-                  value={passwordForm.confirmPassword}
-                  onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
-                  className="ui-field"
-                  placeholder="Confirm your password"
-                  minLength={6}
-                  required
-                />
-              </div>
+                <div>
+                  <label htmlFor="confirmPassword" className="ui-label">Confirm Password</label>
+                  <input
+                    type="password"
+                    id="confirmPassword"
+                    value={passwordForm.confirmPassword}
+                    onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+                    className="ui-field"
+                    placeholder="Confirm your password"
+                    minLength={6}
+                    required
+                  />
+                </div>
 
-              <div className={`flex ${firstLogin ? 'justify-between' : 'justify-end'} items-center gap-3`}>
-                {firstLogin && (
-                  <button
-                    type="button"
-                    onClick={() => navigate('/app/dashboard', { replace: true })}
-                    className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
-                  >
-                    Skip for now
-                  </button>
-                )}
-                <Button type="submit" disabled={saving} size="sm" variant="secondary">
-                  <Key className="h-4 w-4 mr-2" aria-hidden="true" />
-                  {saving ? 'Saving...' : firstLogin ? 'Set Password' : 'Change Password'}
-                </Button>
-              </div>
-            </form>
+                <div className="flex justify-end">
+                  <Button type="submit" disabled={saving} size="sm" variant="secondary">
+                    <Key className="h-4 w-4 mr-2" aria-hidden="true" />
+                    {saving ? 'Saving...' : hasPassword ? 'Change Password' : 'Set Password'}
+                  </Button>
+                </div>
+              </form>
             )}
           </div>
 
@@ -630,7 +610,7 @@ function ProfilePage() {
               <div className="flex justify-between">
                 <span>Last Password Change:</span>
                 <span className="font-medium">
-                  {userProfile.lastPasswordChange 
+                  {userProfile.lastPasswordChange
                     ? new Date(userProfile.lastPasswordChange).toLocaleDateString()
                     : 'Never'
                   }
@@ -644,7 +624,6 @@ function ProfilePage() {
           </div>
         </div>
       </div>
-
     </div>
   )
 }
